@@ -70,6 +70,7 @@ export function translate<T extends AnyShape>(shape: T, v: Vec3): T {
 
   const transformer = new oc.BRepBuilderAPI_Transform_2(shape.wrapped, trsf, true);
   const result = castShape(transformer.Shape()) as T;
+  propagateOrigins(transformer, [shape], result);
   transformer.delete();
   trsf.delete();
   vec.delete();
@@ -90,6 +91,7 @@ export function rotate<T extends AnyShape>(
 
   const transformer = new oc.BRepBuilderAPI_Transform_2(shape.wrapped, trsf, true);
   const result = castShape(transformer.Shape()) as T;
+  propagateOrigins(transformer, [shape], result);
   transformer.delete();
   trsf.delete();
   ax1.delete();
@@ -109,6 +111,7 @@ export function mirror<T extends AnyShape>(
 
   const transformer = new oc.BRepBuilderAPI_Transform_2(shape.wrapped, trsf, true);
   const result = castShape(transformer.Shape()) as T;
+  propagateOrigins(transformer, [shape], result);
   transformer.delete();
   trsf.delete();
   ax2.delete();
@@ -124,6 +127,7 @@ export function scale<T extends AnyShape>(shape: T, factor: number, center: Vec3
 
   const transformer = new oc.BRepBuilderAPI_Transform_2(shape.wrapped, trsf, true);
   const result = castShape(transformer.Shape()) as T;
+  propagateOrigins(transformer, [shape], result);
   transformer.delete();
   trsf.delete();
   pnt.delete();
@@ -244,6 +248,7 @@ export function applyMatrix<T extends AnyShape>(shape: T, matrix: MatrixInput): 
     );
     const transformer = new oc.BRepBuilderAPI_Transform_2(shape.wrapped, trsf, true);
     const result = castShape(transformer.Shape()) as T;
+    propagateOrigins(transformer, [shape], result);
     transformer.delete();
     trsf.delete();
     return result;
@@ -264,6 +269,7 @@ export function applyMatrix<T extends AnyShape>(shape: T, matrix: MatrixInput): 
 
   const transformer = new oc.BRepBuilderAPI_GTransform_2(shape.wrapped, gtrsf, true);
   const result = castShape(transformer.Shape()) as T;
+  propagateOrigins(transformer, [shape], result);
   transformer.delete();
   gtrsf.delete();
   return result;
@@ -326,6 +332,7 @@ export function transformCopy<T extends AnyShape>(shape: T, composed: ComposedTr
   const oc = getKernel().oc;
   const transformer = new oc.BRepBuilderAPI_Transform_2(shape.wrapped, composed.trsf, true);
   const result = castShape(transformer.Shape()) as T;
+  propagateOrigins(transformer, [shape], result);
   transformer.delete();
   return result;
 }
@@ -334,9 +341,12 @@ export function transformCopy<T extends AnyShape>(shape: T, composed: ComposedTr
 // Topology queries (with lazy caching)
 // ---------------------------------------------------------------------------
 
-const topoCache = new WeakMap<object, { edges?: Edge[]; faces?: Face[]; wires?: Wire[] }>();
+const topoCache = new WeakMap<
+  object,
+  { edges?: Edge[]; faces?: Face[]; wires?: Wire[]; faceOrigins?: Map<number, number> }
+>();
 
-function getOrCreateCache(shape: AnyShape): { edges?: Edge[]; faces?: Face[]; wires?: Wire[] } {
+function getOrCreateCache(shape: AnyShape) {
   let entry = topoCache.get(shape.wrapped);
   if (!entry) {
     entry = {};
@@ -376,6 +386,143 @@ export function getWires(shape: AnyShape): Wire[] {
   );
   cache.wires = wires;
   return wires;
+}
+
+/**
+ * Tag all faces of a shape with an opaque integer origin.
+ * Consumers assign meaning (e.g., source line number).
+ */
+export function setShapeOrigin(shape: AnyShape, origin: number): void {
+  const cache = getOrCreateCache(shape);
+  const map = new Map<number, number>();
+  for (const f of getFaces(shape)) {
+    map.set(f.wrapped.HashCode(HASH_CODE_MAX), origin);
+  }
+  cache.faceOrigins = map;
+}
+
+/**
+ * Get the face origin map for a shape (faceHash → originTag).
+ * Returns undefined if no origins have been set or propagated.
+ */
+export function getFaceOrigins(shape: AnyShape): Map<number, number> | undefined {
+  return topoCache.get(shape.wrapped)?.faceOrigins;
+}
+
+// ---------------------------------------------------------------------------
+// Origin propagation
+// ---------------------------------------------------------------------------
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- OCCT WASM types are dynamically typed */
+type OcMakeShapeLike = {
+  Modified(s: any): any;
+  Generated(s: any): any;
+  IsDeleted?(s: any): boolean;
+};
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/**
+ * Iterate a TopTools_ListOfShape by copying it and consuming the copy.
+ * This avoids needing TopTools_ListIteratorOfListOfShape (not in WASM bindings).
+ */
+function iterOcList(
+  list: { Size(): number; First_1(): { HashCode(max: number): number } },
+  callback: (item: { HashCode(max: number): number }) => void
+): void {
+  const oc = getKernel().oc;
+  const copy = new oc.TopTools_ListOfShape_3(list);
+  while (copy.Size() > 0) {
+    callback(copy.First_1());
+    copy.RemoveFirst();
+  }
+  copy.delete();
+}
+
+/**
+ * Propagate face origins from input shapes to a result shape
+ * using an OCCT operation's Modified/Generated history.
+ *
+ * @param op - OCCT operation with Modified/Generated methods (alive, not yet deleted)
+ * @param inputs - Source shapes whose face origins should propagate
+ * @param result - The result shape to populate origins on
+ */
+export function propagateOrigins(op: OcMakeShapeLike, inputs: AnyShape[], result: AnyShape): void {
+  // Collect all input face origins
+  const inputOrigins: Array<{ face: { HashCode(max: number): number }; origin: number }> = [];
+  for (const input of inputs) {
+    const origins = getFaceOrigins(input);
+    if (!origins) continue;
+    for (const f of getFaces(input)) {
+      const hash = f.wrapped.HashCode(HASH_CODE_MAX);
+      const origin = origins.get(hash);
+      if (origin !== undefined) {
+        inputOrigins.push({ face: f.wrapped, origin });
+      }
+    }
+  }
+
+  if (inputOrigins.length === 0) return;
+
+  const resultMap = new Map<number, number>();
+
+  for (const { face, origin } of inputOrigins) {
+    if (op.IsDeleted?.(face)) continue;
+
+    const modifiedList = op.Modified(face);
+    if (modifiedList.Size() > 0) {
+      iterOcList(modifiedList, (modFace) => {
+        resultMap.set(modFace.HashCode(HASH_CODE_MAX), origin);
+      });
+    } else {
+      // Face was not modified — use its original hash (it may survive unchanged)
+      resultMap.set(face.HashCode(HASH_CODE_MAX), origin);
+    }
+
+    const generatedList = op.Generated(face);
+    if (generatedList.Size() > 0) {
+      iterOcList(generatedList, (genFace) => {
+        const hash = genFace.HashCode(HASH_CODE_MAX);
+        if (!resultMap.has(hash)) {
+          resultMap.set(hash, 0);
+        }
+      });
+    }
+  }
+
+  if (resultMap.size > 0) {
+    const cache = getOrCreateCache(result);
+    cache.faceOrigins = resultMap;
+  }
+}
+
+/**
+ * Fallback origin propagation when no OCCT op object is available.
+ * Matches result faces to input faces by hash code (works for unmodified faces only).
+ */
+export function propagateOriginsByHash(inputs: AnyShape[], result: AnyShape): void {
+  const lookup = new Map<number, number>();
+  for (const input of inputs) {
+    const origins = getFaceOrigins(input);
+    if (!origins) continue;
+    for (const [hash, origin] of origins) {
+      lookup.set(hash, origin);
+    }
+  }
+  if (lookup.size === 0) return;
+
+  const resultMap = new Map<number, number>();
+  for (const f of getFaces(result)) {
+    const hash = f.wrapped.HashCode(HASH_CODE_MAX);
+    const origin = lookup.get(hash);
+    if (origin !== undefined) {
+      resultMap.set(hash, origin);
+    }
+  }
+
+  if (resultMap.size > 0) {
+    const cache = getOrCreateCache(result);
+    cache.faceOrigins = resultMap;
+  }
 }
 
 /** Get all vertices of a shape as branded Vertex handles. */
