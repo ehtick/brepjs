@@ -503,6 +503,7 @@ const EXPECTED_RUNTIME_EXPORTS: readonly string[] = [
   'stretch2D',
   'subFace',
   'supportExtrude',
+  'surfaceFromGrid',
   'sweep',
   'tagFaces',
   'tangentArc',
