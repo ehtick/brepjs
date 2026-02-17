@@ -446,6 +446,7 @@ const EXPECTED_RUNTIME_EXPORTS: readonly string[] = [
   'removeChild',
   'replayFrom',
   'replayHistory',
+  'resize',
   'resolve',
   'resolve3D',
   'resolveDirection',

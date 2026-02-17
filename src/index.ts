@@ -385,6 +385,7 @@ export {
   vertexPosition,
   setShapeOrigin,
   getFaceOrigins,
+  resize,
   type Bounds3D,
   type ShapeDescription,
 } from './topology/shapeFns.js';
