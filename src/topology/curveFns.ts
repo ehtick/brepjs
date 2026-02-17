@@ -242,13 +242,14 @@ export function approximateCurve(
 export function offsetWire2D(
   wire: Wire,
   offset: number,
-  kind: 'arc' | 'intersection' | 'tangent' = 'arc'
+  kind: 'arc' | 'intersection' | 'tangent' | 'chamfer' = 'arc'
 ): Result<Wire> {
   const oc = getKernel().oc;
   const joinTypes = {
     arc: oc.GeomAbs_JoinType.GeomAbs_Arc,
     intersection: oc.GeomAbs_JoinType.GeomAbs_Intersection,
     tangent: oc.GeomAbs_JoinType.GeomAbs_Tangent,
+    chamfer: oc.GeomAbs_JoinType.GeomAbs_Intersection, // sharp/miter corners
   };
 
   const resultShape = getKernel().offsetWire2D(wire.wrapped, offset, joinTypes[kind]);
