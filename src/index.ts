@@ -252,7 +252,16 @@ export {
 
 // ── Layer 3: text ──
 
-export { loadFont, getFont, textBlueprints, sketchText } from './text/textBlueprints.js';
+export {
+  loadFont,
+  getFont,
+  textBlueprints,
+  sketchText,
+  textMetrics,
+  fontMetrics,
+  type TextMetricsResult,
+  type FontMetricsResult,
+} from './text/textBlueprints.js';
 
 // ── Layer 3: projection ──
 
@@ -478,7 +487,12 @@ export {
 
 export { fuseAll, cutAll, type BooleanOptions } from './topology/booleanFns.js';
 
-export { surfaceFromGrid, type SurfaceFromGridOptions } from './topology/surfaceFns.js';
+export {
+  surfaceFromGrid,
+  surfaceFromImage,
+  type SurfaceFromGridOptions,
+  type SurfaceFromImageOptions,
+} from './topology/surfaceFns.js';
 
 export { hull, type HullOptions } from './topology/hullFns.js';
 
@@ -518,6 +532,16 @@ export {
 } from './operations/multiSweepFns.js';
 
 export { guidedSweep, type GuidedSweepOptions } from './operations/guidedSweepFns.js';
+
+export { roof, type RoofOptions } from './operations/roofFns.js';
+
+export {
+  computeStraightSkeleton,
+  type SkPoint2D,
+  type SkeletonNode,
+  type SkeletonFace,
+  type StraightSkeleton,
+} from './operations/straightSkeleton.js';
 
 export {
   exportAssemblySTEP,
@@ -599,6 +623,8 @@ export {
 
 export { importSTEP, importSTL, importIGES } from './io/importFns.js';
 export { importDXF } from './io/dxfImportFns.js';
+export { importOBJ } from './io/objImportFns.js';
+export { importThreeMF } from './io/threemfImportFns.js';
 export type { DXFImportOptions } from './io/dxfImportFns.js';
 
 // ── Query (functional, immutable finders) ──
@@ -729,6 +755,8 @@ export {
   type EllipseArcOptions,
 } from './topology/primitiveFns.js';
 
+export { fill } from './topology/surfaceBuilders.js';
+
 // ── Transforms, booleans, modifiers, utilities (clean names) ──
 
 export {
@@ -748,6 +776,7 @@ export {
   cut,
   intersect,
   section,
+  sectionToFace,
   split,
   slice,
   // Modifiers

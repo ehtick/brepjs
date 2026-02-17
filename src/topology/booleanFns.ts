@@ -7,7 +7,7 @@
 type OcType = any;
 
 import { getKernel } from '../kernel/index.js';
-import type { AnyShape, Shape3D } from '../core/shapeTypes.js';
+import type { AnyShape, Face, Shape3D, Wire } from '../core/shapeTypes.js';
 import { castShape, isShape3D } from '../core/shapeTypes.js';
 import { gcWithScope } from '../core/disposal.js';
 import { type Result, ok, err, isErr } from '../core/result.js';
@@ -17,7 +17,8 @@ import type { PlaneInput } from '../core/planeTypes.js';
 import { resolvePlane } from '../core/planeOps.js';
 import { vecAdd, vecScale } from '../core/vecOps.js';
 import { applyGlue } from './shapeBooleans.js';
-import { propagateOrigins, propagateOriginsByHash } from './shapeFns.js';
+import { propagateOrigins, propagateOriginsByHash, getWires, getEdges } from './shapeFns.js';
+import { makeFace } from './surfaceBuilders.js';
 import { propagateFaceTags } from './faceTagFns.js';
 import { propagateColors } from './colorFns.js';
 
@@ -275,11 +276,11 @@ export function fuseAll(
   if (signal?.aborted) throw signal.reason;
   if (shapes.length === 0)
     return err(validationError('FUSE_ALL_EMPTY', 'fuseAll requires at least one shape'));
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length checked above
   if (shapes.length === 1) return ok(shapes[0]!);
 
   for (let i = 0; i < shapes.length; i++) {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- loop index is valid
     const check = validateShape3D(shapes[i]!, `fuseAll: shape at index ${i}`);
     if (isErr(check)) return check;
   }
@@ -328,7 +329,7 @@ export function cutAll(
   const checkBase = validateShape3D(base, 'cutAll: base');
   if (isErr(checkBase)) return checkBase;
   for (let i = 0; i < tools.length; i++) {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- loop index is valid
     const check = validateShape3D(tools[i]!, `cutAll: tool at index ${i}`);
     if (isErr(check)) return check;
   }
@@ -454,6 +455,95 @@ export function section(
   }
 }
 
+/**
+ * Section a shape with a plane and return a filled Face.
+ * The outermost wire (largest bounding-box area) becomes the outer boundary;
+ * any remaining wires are treated as holes.
+ */
+export function sectionToFace(
+  shape: AnyShape,
+  plane: PlaneInput,
+  options: { approximation?: boolean; planeSize?: number } = {}
+): Result<Face> {
+  const sectionResult = section(shape, plane, options);
+  if (!sectionResult.ok) return sectionResult;
+
+  const wires = getWires(sectionResult.value);
+  if (wires.length === 0) {
+    // Section may return loose edges — assemble them into wires
+    const edges = getEdges(sectionResult.value);
+    if (edges.length === 0) {
+      return err(occtError('SECTION_FAILED', 'sectionToFace: section produced no geometry'));
+    }
+    const oc = getKernel().oc;
+    const remaining = [...edges];
+    while (remaining.length > 0) {
+      // Collect edges for this wire by testing connectivity with a probe builder
+      const first = remaining.shift();
+      if (!first) break;
+      const wireEdges = [first];
+
+      let added = true;
+      while (added && remaining.length > 0) {
+        added = false;
+        for (let i = 0; i < remaining.length; i++) {
+          const candidate = remaining[i];
+          if (!candidate) continue;
+          // Probe: create a temporary builder to test if edge connects
+          const probe = new oc.BRepBuilderAPI_MakeWire_1();
+          for (const e of wireEdges) {
+            probe.Add_1(e.wrapped);
+          }
+          probe.Add_1(candidate.wrapped);
+          const connects = probe.Error() === oc.BRepBuilderAPI_WireError.BRepBuilderAPI_WireDone;
+          probe.delete();
+          if (connects) {
+            wireEdges.push(candidate);
+            remaining.splice(i, 1);
+            added = true;
+            break;
+          }
+        }
+      }
+
+      // Build the final wire from collected edges
+      const wb = new oc.BRepBuilderAPI_MakeWire_1();
+      for (const e of wireEdges) {
+        wb.Add_1(e.wrapped);
+      }
+      if (wb.IsDone()) {
+        wires.push(castShape(wb.Wire()) as Wire);
+      }
+      wb.delete();
+    }
+  }
+  if (wires.length === 0) {
+    return err(occtError('SECTION_FAILED', 'sectionToFace: section produced no usable geometry'));
+  }
+
+  // Find outermost wire (largest bounding box diagonal — works for any plane orientation)
+  let outerIdx = 0;
+  let maxDiag = -1;
+  for (let i = 0; i < wires.length; i++) {
+    const w = wires[i];
+    if (!w) continue;
+    const bb = getKernel().boundingBox(w.wrapped);
+    const dx = bb.max[0] - bb.min[0];
+    const dy = bb.max[1] - bb.min[1];
+    const dz = bb.max[2] - bb.min[2];
+    const diag = dx * dx + dy * dy + dz * dz;
+    if (diag > maxDiag) {
+      maxDiag = diag;
+      outerIdx = i;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- outerIdx set from valid wires index
+  const outer = wires[outerIdx]!;
+  const holes = wires.filter((_, i) => i !== outerIdx);
+  return makeFace(outer, holes.length > 0 ? holes : undefined);
+}
+
 // ---------------------------------------------------------------------------
 // Splitting
 // ---------------------------------------------------------------------------
@@ -469,7 +559,7 @@ export function split(shape: AnyShape, tools: AnyShape[]): Result<AnyShape> {
     return err(validationError(BrepErrorCode.NULL_SHAPE_INPUT, 'split: shape is a null shape'));
   }
   for (let i = 0; i < tools.length; i++) {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- loop index is valid
     if (tools[i]!.wrapped.IsNull()) {
       return err(
         validationError(
