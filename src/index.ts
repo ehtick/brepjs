@@ -389,6 +389,14 @@ export {
   type ShapeDescription,
 } from './topology/shapeFns.js';
 
+export {
+  tagFaces,
+  findFacesByTag,
+  getFaceTags,
+  setTagMetadata,
+  getTagMetadata,
+} from './topology/faceTagFns.js';
+
 export { chamferDistAngle as chamferDistAngleShape } from './topology/chamferAngleFns.js';
 
 export {
@@ -470,6 +478,8 @@ export { hull, type HullOptions } from './topology/hullFns.js';
 
 export { minkowski, type MinkowskiOptions } from './topology/minkowskiFns.js';
 
+export { polyhedron, type PolyhedronOptions } from './topology/polyhedronFns.js';
+
 // (modifiers available via public API: fillet, chamfer, shell, offset, thicken)
 
 // ── Healing (functional) ──
@@ -496,6 +506,14 @@ export {
 } from './operations/extrudeFns.js';
 
 export {
+  multiSectionSweep,
+  type SweepSectionConfig,
+  type MultiSweepOptions,
+} from './operations/multiSweepFns.js';
+
+export { guidedSweep, type GuidedSweepOptions } from './operations/guidedSweepFns.js';
+
+export {
   exportAssemblySTEP,
   type ShapeOptions,
   type SupportedUnit,
@@ -515,6 +533,14 @@ export {
   type AssemblyNode,
   type AssemblyNodeOptions,
 } from './operations/assemblyFns.js';
+
+export {
+  addMate,
+  solveAssembly,
+  type MateConstraint,
+  type MateEntity,
+  type AssemblySolveResult,
+} from './operations/mateFns.js';
 
 export {
   createHistory,
