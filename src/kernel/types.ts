@@ -74,6 +74,10 @@ export interface KernelAdapter {
   fuseAll(shapes: OcShape[], options?: BooleanOptions): OcShape;
   cutAll(shape: OcShape, tools: OcShape[], options?: BooleanOptions): OcShape;
 
+  // --- Convex hull ---
+  hull(shapes: OcShape[], tolerance: number): OcShape;
+  hullFromPoints(points: Array<{ x: number; y: number; z: number }>, tolerance: number): OcShape;
+
   // --- Shape construction ---
   makeVertex(x: number, y: number, z: number): OcShape;
   makeEdge(curve: OcType, start?: number, end?: number): OcShape;
