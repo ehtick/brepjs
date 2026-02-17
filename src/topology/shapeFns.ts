@@ -134,6 +134,56 @@ export function scale<T extends AnyShape>(shape: T, factor: number, center: Vec3
   return result;
 }
 
+/** Resize a shape to exact target dimensions with optional auto-proportional scaling. */
+export function resize<T extends AnyShape>(
+  shape: T,
+  dimensions: [number | undefined, number | undefined, number | undefined],
+  options?: { auto?: boolean }
+): T {
+  const bbox = getKernel().boundingBox(shape.wrapped);
+  const size: [number, number, number] = [
+    bbox.max[0] - bbox.min[0],
+    bbox.max[1] - bbox.min[1],
+    bbox.max[2] - bbox.min[2],
+  ];
+
+  const auto = options?.auto === true;
+
+  function factor(dim: number | undefined, sz: number, baseFactor: number): number {
+    if (dim !== undefined && sz > 1e-12) return dim / sz;
+    if (dim === undefined && auto) return baseFactor;
+    return 1;
+  }
+
+  // Find auto-proportional factor from first defined dimension
+  let autoFactor = 1;
+  if (auto) {
+    if (dimensions[0] !== undefined && size[0] > 1e-12) autoFactor = dimensions[0] / size[0];
+    else if (dimensions[1] !== undefined && size[1] > 1e-12) autoFactor = dimensions[1] / size[1];
+    else if (dimensions[2] !== undefined && size[2] > 1e-12) autoFactor = dimensions[2] / size[2];
+  }
+
+  const factors: [number, number, number] = [
+    factor(dimensions[0], size[0], autoFactor),
+    factor(dimensions[1], size[1], autoFactor),
+    factor(dimensions[2], size[2], autoFactor),
+  ];
+
+  // Check if all factors are approximately equal (uniform scale)
+  // Use relative tolerance since OCCT bounding box has floating-point noise
+  const isUniform =
+    Math.abs(factors[0] - factors[1]) < 1e-6 && Math.abs(factors[1] - factors[2]) < 1e-6;
+
+  if (!isUniform) {
+    throw new Error(
+      'resize: non-uniform scaling is not supported (WASM build lacks BRepBuilderAPI_GTransform). ' +
+        'Use auto: true to scale proportionally, or set all three dimensions to achieve uniform scaling.'
+    );
+  }
+
+  return scale(shape, factors[0]);
+}
+
 // ---------------------------------------------------------------------------
 // Matrix transform (OpenSCAD multmatrix equivalent)
 // ---------------------------------------------------------------------------

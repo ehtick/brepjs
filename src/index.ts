@@ -385,6 +385,7 @@ export {
   vertexPosition,
   setShapeOrigin,
   getFaceOrigins,
+  resize,
   type Bounds3D,
   type ShapeDescription,
 } from './topology/shapeFns.js';
@@ -396,6 +397,9 @@ export {
   setTagMetadata,
   getTagMetadata,
 } from './topology/faceTagFns.js';
+
+export { colorFaces, colorShape, getFaceColor, getShapeColor } from './topology/colorFns.js';
+export type { Color, ColorInput } from './topology/colorFns.js';
 
 export { chamferDistAngle as chamferDistAngleShape } from './topology/chamferAngleFns.js';
 
@@ -473,6 +477,8 @@ export {
 // ── Boolean operations (functional) ──
 
 export { fuseAll, cutAll, type BooleanOptions } from './topology/booleanFns.js';
+
+export { surfaceFromGrid, type SurfaceFromGridOptions } from './topology/surfaceFns.js';
 
 export { hull, type HullOptions } from './topology/hullFns.js';
 
@@ -592,6 +598,8 @@ export {
 // ── Import (functional) ──
 
 export { importSTEP, importSTL, importIGES } from './io/importFns.js';
+export { importDXF } from './io/dxfImportFns.js';
+export type { DXFImportOptions } from './io/dxfImportFns.js';
 
 // ── Query (functional, immutable finders) ──
 
