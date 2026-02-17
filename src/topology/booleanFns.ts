@@ -19,6 +19,7 @@ import { vecAdd, vecScale } from '../core/vecOps.js';
 import { applyGlue } from './shapeBooleans.js';
 import { propagateOrigins, propagateOriginsByHash } from './shapeFns.js';
 import { propagateFaceTags } from './faceTagFns.js';
+import { propagateColors } from './colorFns.js';
 
 // ---------------------------------------------------------------------------
 // Pre-validation
@@ -129,6 +130,7 @@ export function fuse(
   if (fuseResult.ok) {
     propagateOrigins(fuseOp, [a, b], fuseResult.value);
     propagateFaceTags(fuseOp, [a, b], fuseResult.value);
+    propagateColors(fuseOp, [a, b], fuseResult.value);
   }
   return fuseResult;
 }
@@ -167,6 +169,7 @@ export function cut(
   if (cutResult.ok) {
     propagateOrigins(cutOp, [base, tool], cutResult.value);
     propagateFaceTags(cutOp, [base, tool], cutResult.value);
+    propagateColors(cutOp, [base, tool], cutResult.value);
   }
   return cutResult;
 }
@@ -203,6 +206,7 @@ export function intersect(
   if (intResult.ok) {
     propagateOrigins(intOp, [a, b], intResult.value);
     propagateFaceTags(intOp, [a, b], intResult.value);
+    propagateColors(intOp, [a, b], intResult.value);
   }
   return intResult;
 }
@@ -346,6 +350,7 @@ export function cutAll(
   if (cutAllResult.ok) {
     propagateOrigins(cutOp, [base, ...tools], cutAllResult.value);
     propagateFaceTags(cutOp, [base, ...tools], cutAllResult.value);
+    propagateColors(cutOp, [base, ...tools], cutAllResult.value);
   }
   return cutAllResult;
 }

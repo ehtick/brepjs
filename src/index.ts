@@ -398,6 +398,9 @@ export {
   getTagMetadata,
 } from './topology/faceTagFns.js';
 
+export { colorFaces, colorShape, getFaceColor, getShapeColor } from './topology/colorFns.js';
+export type { Color, ColorInput } from './topology/colorFns.js';
+
 export { chamferDistAngle as chamferDistAngleShape } from './topology/chamferAngleFns.js';
 
 export {

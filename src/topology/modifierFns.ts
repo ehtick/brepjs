@@ -13,6 +13,7 @@ import { occtError, validationError, BrepErrorCode } from '../core/errors.js';
 import { gcWithScope } from '../core/disposal.js';
 import { getEdges, propagateOrigins } from './shapeFns.js';
 import { propagateFaceTags } from './faceTagFns.js';
+import { propagateColors } from './colorFns.js';
 
 // ---------------------------------------------------------------------------
 // Pre-validation
@@ -51,6 +52,7 @@ export function thicken(shape: Face | Shell, thickness: number): Result<Solid> {
     const cast = castShape(resultOc) as Solid;
     propagateOrigins(builder, [shape], cast);
     propagateFaceTags(builder, [shape], cast);
+    propagateColors(builder, [shape], cast);
     return ok(cast);
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e);
@@ -136,6 +138,7 @@ export function fillet(
     }
     propagateOrigins(builder, [shape], cast);
     propagateFaceTags(builder, [shape], cast);
+    propagateColors(builder, [shape], cast);
     return ok(cast);
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e);
@@ -253,6 +256,7 @@ export function chamfer(
     }
     propagateOrigins(builder, [shape], cast);
     propagateFaceTags(builder, [shape], cast);
+    propagateColors(builder, [shape], cast);
     return ok(cast);
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e);
@@ -322,6 +326,7 @@ export function shell(
     }
     propagateOrigins(builder, [shape], cast);
     propagateFaceTags(builder, [shape], cast);
+    propagateColors(builder, [shape], cast);
     return ok(cast);
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e);
@@ -377,6 +382,7 @@ export function offset(shape: Shape3D, distance: number, tolerance = 1e-6): Resu
     }
     propagateOrigins(builder, [shape], cast);
     propagateFaceTags(builder, [shape], cast);
+    propagateColors(builder, [shape], cast);
     return ok(cast);
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e);
