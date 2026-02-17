@@ -596,6 +596,8 @@ export {
 // ── Import (functional) ──
 
 export { importSTEP, importSTL, importIGES } from './io/importFns.js';
+export { importDXF } from './io/dxfImportFns.js';
+export type { DXFImportOptions } from './io/dxfImportFns.js';
 
 // ── Query (functional, immutable finders) ──
 

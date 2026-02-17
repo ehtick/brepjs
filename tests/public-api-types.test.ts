@@ -346,6 +346,7 @@ const EXPECTED_RUNTIME_EXPORTS: readonly string[] = [
   'healWire',
   'helix',
   'hull',
+  'importDXF',
   'importIGES',
   'importSTEP',
   'importSTL',
