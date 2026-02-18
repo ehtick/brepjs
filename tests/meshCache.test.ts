@@ -21,7 +21,7 @@ function fakeMesh(id: number): ShapeMesh {
 
 function fakeEdgeMesh(id: number): EdgeMesh {
   return {
-    lines: [id, id, id],
+    lines: new Float32Array([id, id, id]),
     edgeGroups: [{ start: 0, count: 1, edgeId: id }],
   };
 }

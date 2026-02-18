@@ -913,10 +913,10 @@ describe('Type structures — runtime field verification', () => {
   describe('EdgeMesh', () => {
     it('has lines and edgeGroups', () => {
       const mesh: EdgeMesh = {
-        lines: [0, 0, 0, 1, 0, 0],
+        lines: new Float32Array([0, 0, 0, 1, 0, 0]),
         edgeGroups: [{ start: 0, count: 6, edgeId: 1 }],
       };
-      expect(Array.isArray(mesh.lines)).toBe(true);
+      expect(mesh.lines).toBeInstanceOf(Float32Array);
       expect(mesh.edgeGroups).toHaveLength(1);
       expect(mesh.edgeGroups[0]).toHaveProperty('start');
       expect(mesh.edgeGroups[0]).toHaveProperty('count');

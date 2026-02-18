@@ -17,12 +17,10 @@ import {
   cylinder,
   sphere,
   polygon,
-  circle,
   line,
   wire,
   translate,
   fuse,
-  BrepWrapperError,
   measureVolume,
   unwrap,
   edgeFinder,
@@ -440,7 +438,7 @@ describe('Wrapper: meshing and rendering', () => {
     const b = box(10, 10, 10);
     const edges = shape(b).meshEdges();
 
-    expect(edges.lines).toBeInstanceOf(Array);
+    expect(edges.lines).toBeInstanceOf(Float32Array);
     expect(edges.edgeGroups).toBeInstanceOf(Array);
     expect(edges.lines.length).toBeGreaterThan(0);
     expect(edges.edgeGroups.length).toBe(12); // Box has 12 edges

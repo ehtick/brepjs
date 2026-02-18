@@ -116,6 +116,6 @@ export function toGroupedBufferGeometryData(mesh: ShapeMesh): GroupedBufferGeome
  */
 export function toLineGeometryData(mesh: EdgeMesh): LineGeometryData {
   return {
-    position: new Float32Array(mesh.lines),
+    position: mesh.lines,
   };
 }

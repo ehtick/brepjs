@@ -61,7 +61,7 @@ export interface ShapeMesh {
 /** Line segment mesh data for edge rendering (wireframe). */
 export interface EdgeMesh {
   /** Flat array of line vertex positions (x,y,z interleaved, 2 vertices per segment). */
-  lines: number[];
+  lines: Float32Array;
   /** Per-edge line segment index ranges for highlighting individual edges. */
   edgeGroups: { start: number; count: number; edgeId: number }[];
 }
@@ -164,7 +164,7 @@ export function meshEdges(
   const kernelResult = getKernel().meshEdges(shape.wrapped, tolerance, angularTolerance);
 
   const result: EdgeMesh = {
-    lines: Array.from(kernelResult.lines),
+    lines: kernelResult.lines,
     edgeGroups: kernelResult.edgeGroups.map((g) => ({
       start: g.start,
       count: g.count,

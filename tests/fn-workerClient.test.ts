@@ -205,7 +205,7 @@ describe('createMeshCache', () => {
     const mockShape = {} as object;
     const key = 'edge-key';
     const mockEdgeMesh = {
-      lines: [0, 0, 0, 1, 1, 1],
+      lines: new Float32Array([0, 0, 0, 1, 1, 1]),
       edgeGroups: [],
     };
 
