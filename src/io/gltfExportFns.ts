@@ -394,19 +394,22 @@ function computeMaterialLayout(
   // Build per-primitive index arrays
   const primitiveData: Array<{ indices: Uint32Array; materialIdx: number }> = [];
   for (const [matIdx, groupIndices] of groupsByMaterial) {
-    const allIndices: number[] = [];
+    let totalCount = 0;
+    for (const gi of groupIndices) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- gi from groupIndices
+      totalCount += faceGroups[gi]!.count;
+    }
+    const indices = new Uint32Array(totalCount);
+    let offset = 0;
     for (const gi of groupIndices) {
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- gi from groupIndices
       const fg = faceGroups[gi]!;
       for (let i = fg.start; i < fg.start + fg.count; i++) {
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- i within triangles bounds
-        allIndices.push(triangles[i]!);
+        indices[offset++] = triangles[i]!;
       }
     }
-    primitiveData.push({
-      indices: new Uint32Array(allIndices),
-      materialIdx: matIdx,
-    });
+    primitiveData.push({ indices, materialIdx: matIdx });
   }
 
   // Buffer layout: [indices_0][pad][indices_1][pad]...[vertices][normals]
