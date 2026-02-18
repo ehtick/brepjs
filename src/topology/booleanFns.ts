@@ -121,6 +121,7 @@ export function fuse(
   const progress = r(new oc.Message_ProgressRange_1());
   const fuseOp = r(new oc.BRepAlgoAPI_Fuse_3(a.wrapped, b.wrapped, progress));
   applyGlue(fuseOp, optimisation);
+  fuseOp.SetRunParallel(true);
   fuseOp.Build(progress);
   if (simplify) fuseOp.SimplifyResult(true, true, 1e-3);
   const fuseResult = castToShape3D(
@@ -164,6 +165,7 @@ export function cut(
   const progress = r(new oc.Message_ProgressRange_1());
   const cutOp = r(new oc.BRepAlgoAPI_Cut_3(base.wrapped, tool.wrapped, progress));
   applyGlue(cutOp, optimisation);
+  cutOp.SetRunParallel(true);
   cutOp.Build(progress);
   if (simplify) cutOp.SimplifyResult(true, true, 1e-3);
   const cutResult = castToShape3D(cutOp.Shape(), 'CUT_NOT_3D', 'Cut did not produce a 3D shape');
@@ -197,6 +199,7 @@ export function intersect(
   const r = gcWithScope();
   const progress = r(new oc.Message_ProgressRange_1());
   const intOp = r(new oc.BRepAlgoAPI_Common_3(a.wrapped, b.wrapped, progress));
+  intOp.SetRunParallel(true);
   intOp.Build(progress);
   if (simplify) intOp.SimplifyResult(true, true, 1e-3);
   const intResult = castToShape3D(
@@ -341,6 +344,7 @@ export function cutAll(
   const progress = r(new oc.Message_ProgressRange_1());
   const cutOp = r(new oc.BRepAlgoAPI_Cut_3(base.wrapped, toolCompound, progress));
   applyGlue(cutOp, optimisation);
+  cutOp.SetRunParallel(true);
   cutOp.Build(progress);
   if (simplify) cutOp.SimplifyResult(true, true, 1e-3);
   const cutAllResult = castToShape3D(

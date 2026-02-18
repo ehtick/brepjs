@@ -50,6 +50,7 @@ export function fuse(
   const progress = new oc.Message_ProgressRange_1();
   const fuseOp = new oc.BRepAlgoAPI_Fuse_3(shape, tool, progress);
   applyGlue(oc, fuseOp, optimisation);
+  fuseOp.SetRunParallel(true);
   fuseOp.Build(progress);
   if (simplify) fuseOp.SimplifyResult(true, true, 1e-3);
   const result = fuseOp.Shape();
@@ -71,6 +72,7 @@ export function cut(
   const progress = new oc.Message_ProgressRange_1();
   const cutOp = new oc.BRepAlgoAPI_Cut_3(shape, tool, progress);
   applyGlue(oc, cutOp, optimisation);
+  cutOp.SetRunParallel(true);
   cutOp.Build(progress);
   if (simplify) cutOp.SimplifyResult(true, true, 1e-3);
   const result = cutOp.Shape();
@@ -92,6 +94,7 @@ export function intersect(
   const progress = new oc.Message_ProgressRange_1();
   const commonOp = new oc.BRepAlgoAPI_Common_3(shape, tool, progress);
   applyGlue(oc, commonOp, optimisation);
+  commonOp.SetRunParallel(true);
   commonOp.Build(progress);
   if (simplify) commonOp.SimplifyResult(true, true, 1e-3);
   const result = commonOp.Shape();
@@ -113,6 +116,7 @@ export function section(
   const progress = new oc.Message_ProgressRange_1();
   const sectionOp = new oc.BRepAlgoAPI_Section_3(shape, tool, false);
   sectionOp.Approximation(approximation);
+  sectionOp.SetRunParallel(true);
   sectionOp.Build(progress);
   if (!sectionOp.IsDone()) {
     sectionOp.delete();
@@ -162,6 +166,7 @@ function fuseAllNative(
   const builder = new oc.BRepAlgoAPI_BuilderAlgo_1();
   builder.SetArguments(argList);
   applyGlue(oc, builder, optimisation);
+  builder.SetRunParallel(true);
 
   const progress = new oc.Message_ProgressRange_1();
   builder.Build(progress);
@@ -271,6 +276,7 @@ export function split(oc: OpenCascadeInstance, shape: OcShape, tools: OcShape[])
   const splitter = new oc.BRepAlgoAPI_Splitter();
   splitter.SetArguments(argList);
   splitter.SetTools(toolList);
+  splitter.SetRunParallel(true);
 
   const progress = new oc.Message_ProgressRange_1();
   splitter.Build(progress);
