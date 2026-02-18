@@ -9,6 +9,7 @@ import type { Vec3 } from '../core/types.js';
 import type { AnyShape, Face, Shape3D } from '../core/shapeTypes.js';
 import { uvBounds } from '../topology/faceFns.js';
 import { surfaceCurvature, type CurvatureResult } from '../kernel/measureOps.js';
+import { getCachedMeasurement, setCachedMeasurement } from './measureCache.js';
 
 // ---------------------------------------------------------------------------
 // Pre-validation
@@ -62,6 +63,9 @@ export interface LinearProps extends PhysicalProps {
  */
 export function measureVolumeProps(shape: Shape3D): VolumeProps {
   assertShapeNotNull(shape, 'measureVolumeProps');
+  const cached = getCachedMeasurement(shape.wrapped, 'volume') as VolumeProps | undefined;
+  if (cached) return cached;
+
   const oc = getKernel().oc;
   const r = gcWithScope();
 
@@ -69,11 +73,13 @@ export function measureVolumeProps(shape: Shape3D): VolumeProps {
   oc.BRepGProp.VolumeProperties_1(shape.wrapped, props, false, false, false);
   const pnt = r(props.CentreOfMass());
   const m = props.Mass();
-  return {
+  const result: VolumeProps = {
     mass: m,
     volume: m,
     centerOfMass: [pnt.X(), pnt.Y(), pnt.Z()],
   };
+  setCachedMeasurement(shape.wrapped, 'volume', result);
+  return result;
 }
 
 /**
@@ -85,6 +91,9 @@ export function measureVolumeProps(shape: Shape3D): VolumeProps {
  */
 export function measureSurfaceProps(shape: Face | Shape3D): SurfaceProps {
   assertShapeNotNull(shape, 'measureSurfaceProps');
+  const cached = getCachedMeasurement(shape.wrapped, 'surface') as SurfaceProps | undefined;
+  if (cached) return cached;
+
   const oc = getKernel().oc;
   const r = gcWithScope();
 
@@ -92,11 +101,13 @@ export function measureSurfaceProps(shape: Face | Shape3D): SurfaceProps {
   oc.BRepGProp.SurfaceProperties_1(shape.wrapped, props, false, false);
   const pnt = r(props.CentreOfMass());
   const m = props.Mass();
-  return {
+  const result: SurfaceProps = {
     mass: m,
     area: m,
     centerOfMass: [pnt.X(), pnt.Y(), pnt.Z()],
   };
+  setCachedMeasurement(shape.wrapped, 'surface', result);
+  return result;
 }
 
 /**
@@ -111,6 +122,9 @@ export function measureSurfaceProps(shape: Face | Shape3D): SurfaceProps {
  */
 export function measureLinearProps(shape: AnyShape): LinearProps {
   assertShapeNotNull(shape, 'measureLinearProps');
+  const cached = getCachedMeasurement(shape.wrapped, 'linear') as LinearProps | undefined;
+  if (cached) return cached;
+
   const oc = getKernel().oc;
   const r = gcWithScope();
 
@@ -118,11 +132,13 @@ export function measureLinearProps(shape: AnyShape): LinearProps {
   oc.BRepGProp.LinearProperties(shape.wrapped, props, false, false);
   const pnt = r(props.CentreOfMass());
   const m = props.Mass();
-  return {
+  const result: LinearProps = {
     mass: m,
     length: m,
     centerOfMass: [pnt.X(), pnt.Y(), pnt.Z()],
   };
+  setCachedMeasurement(shape.wrapped, 'linear', result);
+  return result;
 }
 
 /**

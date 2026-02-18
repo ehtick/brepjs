@@ -49,6 +49,7 @@ describe('measureArea', () => {
 
   it('face area', () => {
     const rect = sketchRectangle(10, 20);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- getFaces always returns at least one face for a rectangle
     const f = getFaces(castShape(rect.face().wrapped))[0]!;
     expect(measureArea(f)).toBeCloseTo(200, 0);
   });
@@ -188,5 +189,31 @@ describe('null-shape pre-validation', () => {
 
   it('measureCurvatureAtMid throws on null face', () => {
     expect(() => measureCurvatureAtMid(makeNullFace())).toThrow('null shape');
+  });
+});
+
+describe('measurement caching', () => {
+  it('measureVolumeProps returns identical object on second call', () => {
+    const b = box(10, 20, 30);
+    const s = castShape(b.wrapped) as Shape3D;
+    const first = measureVolumeProps(s);
+    const second = measureVolumeProps(s);
+    expect(second).toBe(first); // same reference
+  });
+
+  it('measureSurfaceProps returns identical object on second call', () => {
+    const b = box(10, 20, 30);
+    const s = castShape(b.wrapped) as Shape3D;
+    const first = measureSurfaceProps(s);
+    const second = measureSurfaceProps(s);
+    expect(second).toBe(first);
+  });
+
+  it('measureLinearProps returns identical object on second call', () => {
+    const l = line([0, 0, 0], [10, 0, 0]);
+    const s = castShape(l.wrapped);
+    const first = measureLinearProps(s);
+    const second = measureLinearProps(s);
+    expect(second).toBe(first);
   });
 });
