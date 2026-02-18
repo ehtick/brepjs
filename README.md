@@ -45,11 +45,13 @@ initFromOC(oc);
 
 ## Features
 
-**Modeling** — `box`, `cylinder`, `sphere`, `cone`, `torus`, `ellipsoid` plus `extrude`, `revolve`, `loft`, `sweep` from 2D sketches
+**Modeling** — `box`, `cylinder`, `sphere`, `cone`, `torus`, `ellipsoid`, `polyhedron` plus `extrude`, `revolve`, `loft`, `sweep` from 2D sketches
 
 **Booleans** — `fuse`, `cut`, `intersect`, `section`, `split`, `slice` with batch variants `fuseAll`, `cutAll`
 
-**Modifiers** — `fillet`, `chamfer`, `shell`, `offset`, `thicken` on any solid
+**Modifiers** — `fillet`, `chamfer`, `shell`, `offset`, `thicken`, `resize`. Accepts `ShapeFinder` directly
+
+**Transforms** — `translate`, `rotate`, `mirror`, `scale`, `applyMatrix`, `composeTransforms`, `transformCopy`
 
 **Sketching** — `draw`, `drawRectangle`, `drawCircle`, `Sketcher`, `sketchCircle`, `sketchHelix` for 2D-to-3D workflows
 
@@ -57,17 +59,23 @@ initFromOC(oc);
 
 **Measurement** — `measureVolume`, `measureArea`, `measureLength`, `measureDistance`, `checkInterference`
 
-**Import/Export** — STEP, STL, IGES, glTF/GLB, DXF, 3MF, OBJ, SVG. Assembly export with colors and names via `exportAssemblySTEP`
+**Import/Export** — STEP, STL, glTF/GLB, DXF (import + export), 3MF, OBJ, SVG (import). Assembly export with colors and names via `exportAssemblySTEP`
+
+**Advanced Geometry** — `hull`, `minkowski`, `fill`, `roof`, `surfaceFromGrid`
+
+**Colors** — Per-shape colors that propagate through booleans and modifiers
 
 **Rendering** — `mesh` and `toBufferGeometryData` for Three.js / WebGL integration
 
-**Text** — `loadFont`, `drawText`, `sketchText` for text outlines and engraving
+**Text** — `loadFont`, `drawText`, `sketchText`, `textMetrics`
 
 **Healing** — `autoHeal`, `healSolid`, `healFace`, `isValid` for fixing imported geometry
 
 **Patterns** — `linearPattern`, `circularPattern` for arraying shapes
 
-**Assemblies** — `createAssemblyNode`, `addChild`, `walkAssembly`, `collectShapes` for hierarchical models
+**Assemblies** — `createAssemblyNode`, `addChild`, `walkAssembly`, `collectShapes`, assembly mates
+
+**Face Tracking** — Face origin tracking and face tags across boolean operations
 
 **Workers** — `createWorkerClient`, `createWorkerHandler` for off-main-thread operations
 
@@ -270,20 +278,16 @@ for (const width of [30, 40, 50, 60]) {
 ## Examples
 
 ```bash
-npm run example examples/hello-world.ts
+npm run example examples/mounting-block.ts
 ```
 
-| Example                                                 | What it does                                |
-| ------------------------------------------------------- | ------------------------------------------- |
-| [hello-world.ts](./examples/hello-world.ts)             | Create a box, measure it, export it         |
-| [basic-primitives.ts](./examples/basic-primitives.ts)   | Primitives and boolean operations           |
-| [mechanical-part.ts](./examples/mechanical-part.ts)     | Bracket with holes, slots, and SVG drawings |
-| [2d-to-3d.ts](./examples/2d-to-3d.ts)                   | Sketch a profile, extrude to 3D             |
-| [parametric-part.ts](./examples/parametric-part.ts)     | Configurable flanged pipe fitting           |
-| [threejs-rendering.ts](./examples/threejs-rendering.ts) | Generate mesh data for Three.js             |
-| [browser-viewer.ts](./examples/browser-viewer.ts)       | Standalone HTML viewer with orbit controls  |
-| [import-export.ts](./examples/import-export.ts)         | Load, modify, and re-export STEP files      |
-| [text-engraving.ts](./examples/text-engraving.ts)       | Engrave text on a solid shape               |
+| Example                                               | Level        | What it does                                                   |
+| ----------------------------------------------------- | ------------ | -------------------------------------------------------------- |
+| [mounting-block.ts](./examples/mounting-block.ts)     | Beginner     | Game die with filleted edges and `cutAll` dot indentations     |
+| [shelf-bracket.ts](./examples/shelf-bracket.ts)       | Intermediate | Spur gear with `rotate` patterning and `fuseAll` teeth         |
+| [pen-cup.ts](./examples/pen-cup.ts)                   | Intermediate | Hollowed container using `shell` and `faceFinder`              |
+| [lofted-vase.ts](./examples/lofted-vase.ts)           | Advanced     | Multi-section `loft` through circular profiles, then shelled   |
+| [compartment-tray.ts](./examples/compartment-tray.ts) | Advanced     | Storage tray with dividers: `fuseAll` → `intersect` → `cutAll` |
 
 ## Imports
 
@@ -300,8 +304,11 @@ import { box, fuse, fillet } from 'brepjs/topology';
 import { importSTEP, exportSTEP } from 'brepjs/io';
 import { measureVolume } from 'brepjs/measurement';
 import { edgeFinder, faceFinder } from 'brepjs/query';
-import { sketchCircle, draw } from 'brepjs/sketching';
+import { sketchCircle, draw, drawRectangle, drawCircle } from 'brepjs/sketching';
 import { createAssemblyNode } from 'brepjs/operations';
+import { createWorkerClient } from 'brepjs/worker';
+import { Result, isOk, unwrap } from 'brepjs/result';
+import { toVec3, vecAdd, vecNormalize } from 'brepjs/vectors';
 ```
 
 ## Error Handling
@@ -333,9 +340,11 @@ Layer 0  kernel/, utils/                  WASM bindings
 ## Documentation
 
 - [API Reference](https://andymai.github.io/brepjs/) — Searchable TypeDoc reference
+- [Zero to Shape](./docs/zero-to-shape.md) — First shape in 60 seconds
 - [Getting Started](./docs/getting-started.md) — Install to first part
 - [B-Rep Concepts](./docs/concepts.md) — Vertices, edges, faces, solids
 - [Cheat Sheet](./docs/cheat-sheet.md) — Single-page reference for common operations
+- [Cookbook](./docs/cookbook.md) — Practical recipes for common CAD workflows
 - [Which API?](./docs/which-api.md) — Sketcher vs functional vs Drawing
 - [Function Lookup](./docs/function-lookup.md) — Alphabetical index of every export
 - [Memory Management](./docs/memory-management.md) — Resource cleanup patterns
