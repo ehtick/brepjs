@@ -1,5 +1,4 @@
-import { getKernel } from '../../kernel/index.js';
-import { DisposalScope } from '../../core/memory.js';
+import { getKernel2D } from '../../kernel/index.js';
 import { approximateAsBSpline } from './approximations.js';
 import { Curve2D } from './Curve2D.js';
 import type { Point2D } from './definitions.js';
@@ -47,21 +46,22 @@ export const make2dOffset = (
   curve: Curve2D,
   offset: number
 ): Curve2D | { collapsed: true; firstPoint: Point2D; lastPoint: Point2D } => {
-  using scope = new DisposalScope();
   const curveType = curve.geomType;
+  const kernel = getKernel2D();
 
   if (curveType === 'CIRCLE') {
-    const circle = scope.register(scope.register(curve.adaptor()).Circle());
-    const radius = circle.Radius();
+    const circleData = kernel.getCurve2dCircleData(curve.wrapped);
+    if (!circleData) return make2dSegmentCurve(curve.firstPoint, curve.lastPoint);
 
-    const orientationCorrection = circle.IsDirect() ? 1 : -1;
+    const { cx, cy, radius, isDirect } = circleData;
+
+    const orientationCorrection = isDirect ? 1 : -1;
     const orientedOffset = offset * orientationCorrection;
 
-    const newRadius = Number(radius) + orientedOffset;
+    const newRadius = radius + orientedOffset;
 
     if (newRadius < 1e-10) {
-      const centerPos = scope.register(circle.Location());
-      const center: Point2D = [centerPos.X(), centerPos.Y()];
+      const center: Point2D = [cx, cy];
 
       // We replace collapsed arcs by a segment of line
       const offsetViaCenter = (point: Point2D): Point2D => {
@@ -76,19 +76,16 @@ export const make2dOffset = (
       };
     }
 
-    const oc = getKernel().oc;
-    const newCircle = new oc.gp_Circ2d_3(circle.Axis(), newRadius);
-    const newInnerCurve = new oc.Geom2d_Circle_1(newCircle);
-    newCircle.delete();
-    const newCurve = new oc.Geom2d_TrimmedCurve(
-      new oc.Handle_Geom2d_Curve_2(newInnerCurve),
+    const circleHandle = kernel.makeCircle2d(cx, cy, newRadius, isDirect);
+    const fullCircle = new Curve2D(circleHandle);
+    const trimmedHandle = kernel.trimCurve2d(
+      fullCircle.wrapped,
       curve.firstParameter,
-      curve.lastParameter,
-      true,
-      true
+      curve.lastParameter
     );
+    fullCircle.delete();
 
-    return new Curve2D(new oc.Handle_Geom2d_Curve_2(newCurve));
+    return new Curve2D(trimmedHandle);
   }
 
   if (curveType === 'LINE') {
@@ -98,17 +95,14 @@ export const make2dOffset = (
   }
 
   // We should compute the analytic offset for a curve
+  const offsetHandle = kernel.offsetCurve2d(curve.wrapped, offset);
 
-  const oc = getKernel().oc;
+  const offsetCurve = new Curve2D(offsetHandle);
 
-  const offsetCurve = new Curve2D(
-    new oc.Handle_Geom2d_Curve_2(new oc.Geom2d_OffsetCurve(curve.wrapped, offset, true))
-  );
-
-  // While return the offset curve itself would be the more correct thing to do,
-  // opencascade does some weird stuff with it (for instance after mirroring it)
+  // While returning the offset curve itself would be the more correct thing to do,
+  // kernel does some weird stuff with it (for instance after mirroring it)
   // This approximates it with a continuous bspline
-  const approximation = approximateAsBSpline(offsetCurve.adaptor());
+  const approximation = approximateAsBSpline(offsetCurve);
 
   // We need a better way to handle curves that self intersect, for now we
   // replace them with a line

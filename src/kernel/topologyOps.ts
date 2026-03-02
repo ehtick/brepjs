@@ -4,10 +4,10 @@
  * Provides shape iteration, type detection, and comparison operations.
  * Has dual implementations: C++ TopologyExtractor when available, JS TopExp_Explorer fallback.
  *
- * Used by OCCTAdapter.
+ * Used by DefaultAdapter.
  */
 
-import type { OpenCascadeInstance, OcShape, ShapeType } from './types.js';
+import type { KernelInstance, KernelShape, ShapeType } from './types.js';
 import { HASH_CODE_MAX } from './measureOps.js';
 
 // Static type enum map for bulk extraction (TopologyExtractor uses integer types)
@@ -26,13 +26,13 @@ const BULK_TYPE_ENUM_MAP: Record<ShapeType, number> = {
  * Iterates shapes using C++ bulk extraction.
  */
 export function iterShapesBulk(
-  oc: OpenCascadeInstance,
-  shape: OcShape,
+  oc: KernelInstance,
+  shape: KernelShape,
   type: ShapeType
-): OcShape[] {
+): KernelShape[] {
   const raw = oc.TopologyExtractor.extract(shape, BULK_TYPE_ENUM_MAP[type]);
   const count = raw.getShapesCount() as number;
-  const result: OcShape[] = [];
+  const result: KernelShape[] = [];
   for (let i = 0; i < count; i++) {
     result.push(raw.getShape(i));
   }
@@ -41,12 +41,16 @@ export function iterShapesBulk(
 }
 
 // Cached type enum maps for JS-side iteration, keyed by OC instance
-const jsTypeEnumMaps = new WeakMap<OpenCascadeInstance, Record<ShapeType, unknown>>();
+const jsTypeEnumMaps = new WeakMap<KernelInstance, Record<ShapeType, unknown>>();
 
 /**
  * Iterates shapes using JS-side TopExp_Explorer.
  */
-export function iterShapesJS(oc: OpenCascadeInstance, shape: OcShape, type: ShapeType): OcShape[] {
+export function iterShapesJS(
+  oc: KernelInstance,
+  shape: KernelShape,
+  type: ShapeType
+): KernelShape[] {
   // Get or create cached type enum map for this OC instance
   let typeMap = jsTypeEnumMaps.get(oc);
   if (!typeMap) {
@@ -65,8 +69,8 @@ export function iterShapesJS(oc: OpenCascadeInstance, shape: OcShape, type: Shap
   }
   const explorer = new oc.TopExp_Explorer_2(shape, typeMap[type], oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
 
-  const result: OcShape[] = [];
-  const seen = new Map<number, OcShape[]>();
+  const result: KernelShape[] = [];
+  const seen = new Map<number, KernelShape[]>();
   while (explorer.More()) {
     const item = explorer.Current();
     const hash = item.HashCode(HASH_CODE_MAX);
@@ -87,7 +91,7 @@ export function iterShapesJS(oc: OpenCascadeInstance, shape: OcShape, type: Shap
 /**
  * Iterates sub-shapes of a given type, using C++ bulk extraction when available.
  */
-export function iterShapes(oc: OpenCascadeInstance, shape: OcShape, type: ShapeType): OcShape[] {
+export function iterShapes(oc: KernelInstance, shape: KernelShape, type: ShapeType): KernelShape[] {
   if (oc.TopologyExtractor) {
     return iterShapesBulk(oc, shape, type);
   }
@@ -95,12 +99,12 @@ export function iterShapes(oc: OpenCascadeInstance, shape: OcShape, type: ShapeT
 }
 
 // Cached shape type map per OC instance
-const shapeTypeMaps = new WeakMap<OpenCascadeInstance, Map<unknown, ShapeType>>();
+const shapeTypeMaps = new WeakMap<KernelInstance, Map<unknown, ShapeType>>();
 
 /**
  * Gets or creates the shape type enum-to-string map for an OC instance.
  */
-function getShapeTypeMap(oc: OpenCascadeInstance): Map<unknown, ShapeType> {
+function getShapeTypeMap(oc: KernelInstance): Map<unknown, ShapeType> {
   let map = shapeTypeMaps.get(oc);
   if (!map) {
     const ta = oc.TopAbs_ShapeEnum;
@@ -122,7 +126,7 @@ function getShapeTypeMap(oc: OpenCascadeInstance): Map<unknown, ShapeType> {
 /**
  * Returns the shape type string for a given shape.
  */
-export function shapeType(oc: OpenCascadeInstance, shape: OcShape): ShapeType {
+export function shapeType(oc: KernelInstance, shape: KernelShape): ShapeType {
   if (shape.IsNull()) throw new Error('Cannot determine shape type: shape is null');
   const result = getShapeTypeMap(oc).get(shape.ShapeType());
   if (!result) throw new Error('Unknown shape type enum value');
@@ -132,7 +136,7 @@ export function shapeType(oc: OpenCascadeInstance, shape: OcShape): ShapeType {
 /**
  * Checks if a shape is valid according to OCCT geometry and topology checks.
  */
-export function isValid(oc: OpenCascadeInstance, shape: OcShape): boolean {
+export function isValid(oc: KernelInstance, shape: KernelShape): boolean {
   const analyzer = new oc.BRepCheck_Analyzer(shape, true, false);
   const valid = analyzer.IsValid_2();
   analyzer.delete();
@@ -142,7 +146,7 @@ export function isValid(oc: OpenCascadeInstance, shape: OcShape): boolean {
 /**
  * Sews shapes together using BRepBuilderAPI_Sewing.
  */
-export function sew(oc: OpenCascadeInstance, shapes: OcShape[], tolerance = 1e-6): OcShape {
+export function sew(oc: KernelInstance, shapes: KernelShape[], tolerance = 1e-6): KernelShape {
   const builder = new oc.BRepBuilderAPI_Sewing(tolerance, true, true, true, false);
   for (const shape of shapes) {
     builder.Add(shape);
@@ -156,15 +160,41 @@ export function sew(oc: OpenCascadeInstance, shapes: OcShape[], tolerance = 1e-6
 }
 
 /**
+ * Iterate a TopTools_ListOfShape, calling a callback for each item.
+ * Uses the native iterator when available, falling back to copy-and-consume.
+ */
+export function iterShapeList(
+  oc: KernelInstance,
+  list: KernelShape,
+  callback: (item: KernelShape) => void
+): void {
+  if (oc.TopTools_ListIteratorOfListOfShape) {
+    const iter = new oc.TopTools_ListIteratorOfListOfShape(list);
+    while (iter.More()) {
+      callback(iter.Value());
+      iter.Next();
+    }
+    iter.delete();
+  } else {
+    const copy = new oc.TopTools_ListOfShape_3(list);
+    while (copy.Size() > 0) {
+      callback(copy.First_1());
+      copy.RemoveFirst();
+    }
+    copy.delete();
+  }
+}
+
+/**
  * Checks if two shapes are the same (same TShape, location, and orientation).
  */
-export function isSame(a: OcShape, b: OcShape): boolean {
+export function isSame(a: KernelShape, b: KernelShape): boolean {
   return a.IsSame(b);
 }
 
 /**
  * Checks if two shapes are equal (IsEqual).
  */
-export function isEqual(a: OcShape, b: OcShape): boolean {
+export function isEqual(a: KernelShape, b: KernelShape): boolean {
   return a.IsEqual(b);
 }

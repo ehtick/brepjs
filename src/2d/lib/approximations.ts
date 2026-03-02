@@ -1,82 +1,50 @@
-import type { OcType } from '../../kernel/types.js';
-import { findCurveType } from '../../core/definitionMaps.js';
-import { unwrap } from '../../core/result.js';
 import { bug } from '../../core/errors.js';
-import { getKernel } from '../../kernel/index.js';
-import { DisposalScope } from '../../core/memory.js';
+import { getKernel2D } from '../../kernel/index.js';
 import { Curve2D } from './Curve2D.js';
 import { samePoint } from './vectorOperations.js';
 
 /**
- * Approximate a 2D curve as a B-spline via `Geom2dConvert_ApproxCurve`.
+ * Approximate a 2D curve as a B-spline via the kernel's
+ * `approximateCurve2dAsBSpline` method.
  *
- * @param adaptor - A `Geom2dAdaptor_Curve` wrapping the source curve.
+ * @param curve - The source `Curve2D` to approximate.
  * @param tolerance - Maximum deviation from the original curve.
  * @param continuity - Required geometric continuity of the result.
  * @param maxSegments - Maximum number of B-spline spans.
  *
  * @example
  * ```ts
- * const bspline = approximateAsBSpline(curve.adaptor(), 1e-4, 'C1');
+ * const bspline = approximateAsBSpline(curve, 1e-4, 'C1');
  * ```
  */
 export const approximateAsBSpline = (
-  adaptor: OcType,
+  curve: Curve2D,
   tolerance = 1e-4,
   continuity: 'C0' | 'C1' | 'C2' | 'C3' = 'C0',
   maxSegments = 200
 ): Curve2D => {
-  const oc = getKernel().oc;
-  using scope = new DisposalScope();
-
-  const continuities: Record<string, OcType> = {
-    C0: oc.GeomAbs_Shape.GeomAbs_C0,
-    C1: oc.GeomAbs_Shape.GeomAbs_C1,
-    C2: oc.GeomAbs_Shape.GeomAbs_C2,
-    C3: oc.GeomAbs_Shape.GeomAbs_C3,
-  };
-
-  const convert = scope.register(
-    new oc.Geom2dConvert_ApproxCurve_2(
-      adaptor.ShallowCopy(),
-      tolerance,
-      continuities[continuity],
-      maxSegments,
-      3
-    )
+  const kernel = getKernel2D();
+  const handle = kernel.approximateCurve2dAsBSpline(
+    curve.wrapped,
+    tolerance,
+    continuity,
+    maxSegments
   );
-
-  return new Curve2D(convert.Curve());
+  return new Curve2D(handle);
 };
 
 /**
  * Decompose a B-spline curve into an array of Bezier arcs.
  *
- * @param adaptor - A `Geom2dAdaptor_Curve` whose type must be `BSPLINE_CURVE`.
+ * @param curve - A `Curve2D` whose type must be `BSPLINE_CURVE`.
  * @returns An array of Bezier `Curve2D` segments covering the original B-spline.
  */
-export const BSplineToBezier = (adaptor: OcType): Curve2D[] => {
-  if (unwrap(findCurveType(adaptor.GetType())) !== 'BSPLINE_CURVE')
-    bug('BSplineToBezier', 'You can only convert a Bspline');
+export const BSplineToBezier = (curve: Curve2D): Curve2D[] => {
+  if (curve.geomType !== 'BSPLINE_CURVE') bug('BSplineToBezier', 'You can only convert a Bspline');
 
-  const handle = adaptor.BSpline();
-
-  const oc = getKernel().oc;
-  const convert = new oc.Geom2dConvert_BSplineCurveToBezierCurve_1(handle);
-
-  function* bezierCurves(): Generator<Curve2D> {
-    const nArcs = convert.NbArcs();
-    if (!nArcs) return;
-
-    for (let i = 1; i <= nArcs; i++) {
-      const arc = convert.Arc(i);
-      yield new Curve2D(arc);
-    }
-  }
-
-  const curves = Array.from(bezierCurves());
-  convert.delete();
-  return curves;
+  const kernel = getKernel2D();
+  const handles = kernel.decomposeBSpline2dToBeziers(curve.wrapped);
+  return handles.map((h) => new Curve2D(h));
 };
 
 /** Options for SVG-compatible curve approximation. */
@@ -110,11 +78,10 @@ export function approximateAsSvgCompatibleCurve(
     maxSegments: 300,
   }
 ): Curve2D[] {
-  using scope = new DisposalScope();
+  const kernel = getKernel2D();
 
   return curves.flatMap((curve) => {
-    const adaptor = scope.register(curve.adaptor());
-    const curveType = unwrap(findCurveType(adaptor.GetType()));
+    const curveType = curve.geomType;
 
     if (
       curveType === 'ELLIPSE' ||
@@ -128,28 +95,24 @@ export function approximateAsSvgCompatibleCurve(
     }
 
     if (curveType === 'BEZIER_CURVE') {
-      const b = adaptor.Bezier().get();
-      const deg = b.Degree();
+      const deg = kernel.getCurve2dBezierDegree(curve.wrapped);
 
-      if ([1, 2, 3].includes(deg)) {
+      if (deg !== null && [1, 2, 3].includes(deg)) {
         return curve;
       }
     }
 
     if (curveType === 'BSPLINE_CURVE') {
-      const c = BSplineToBezier(adaptor);
+      const c = BSplineToBezier(curve);
       return approximateAsSvgCompatibleCurve(c, options);
     }
 
     const bspline = approximateAsBSpline(
-      adaptor,
+      curve,
       options.tolerance,
       options.continuity,
       options.maxSegments
     );
-    return approximateAsSvgCompatibleCurve(
-      BSplineToBezier(scope.register(bspline.adaptor())),
-      options
-    );
+    return approximateAsSvgCompatibleCurve(BSplineToBezier(bspline), options);
   });
 }

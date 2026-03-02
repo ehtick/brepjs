@@ -4,7 +4,10 @@
 
 // ── Layer 0: kernel / utils ──
 
-export { initFromOC, getKernel } from './kernel/index.js';
+export { initFromOC, getKernel, registerKernel, withKernel } from './kernel/index.js';
+export type { KernelAdapter, SurfaceType, ShapeOrientation, ShapeType } from './kernel/index.js';
+export { supportsProjection } from './kernel/index.js';
+export type { ProjectionCapability } from './kernel/index.js';
 
 // ── Result type ──
 
@@ -40,7 +43,7 @@ export {
   type BrepError,
   type BrepErrorKind,
   BrepErrorCode,
-  occtError,
+  kernelError,
   validationError,
   typeCastError,
   sketcherStateError,
@@ -102,7 +105,7 @@ export { type AssemblyExporter, createAssembly } from './operations/exporters.js
 
 // ── Layer 2: 2d ──
 
-export { type Point2D, BoundingBox2d, Curve2D, axis2d } from './2d/lib/index.js';
+export { type Point2D, BoundingBox2d, Curve2D } from './2d/lib/index.js';
 
 export { default as Blueprint } from './2d/blueprints/Blueprint.js';
 export { default as CompoundBlueprint } from './2d/blueprints/CompoundBlueprint.js';
@@ -312,14 +315,14 @@ export {
 } from './core/vecOps.js';
 
 export {
-  toOcVec,
-  fromOcVec,
-  fromOcPnt,
-  fromOcDir,
-  withOcVec,
-  withOcPnt,
-  withOcDir,
-} from './core/occtBoundary.js';
+  toKernelVec,
+  fromKernelVec,
+  fromKernelPnt,
+  fromKernelDir,
+  withKernelVec,
+  withKernelPnt,
+  withKernelDir,
+} from './core/kernelBoundary.js';
 
 // ── Branded shape types ──
 
@@ -361,11 +364,11 @@ export {
 
 // ── Disposal / resource management ──
 
-export type { ShapeHandle, OcHandle } from './core/disposal.js';
+export type { ShapeHandle, KernelHandle } from './core/disposal.js';
 
 export {
   createHandle,
-  createOcHandle,
+  createKernelHandle,
   DisposalScope,
   withScope,
   withScopeResult,

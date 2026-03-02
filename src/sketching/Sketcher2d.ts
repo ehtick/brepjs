@@ -11,7 +11,7 @@ import { curveStartPoint, curveIsClosed } from '../topology/curveFns.js';
 import { downcast } from '../topology/cast.js';
 import { defaultsSplineOptions } from './sketcherlib.js';
 import type { SplineOptions, GenericSketcher } from './sketcherlib.js';
-import type { OcType } from '../kernel/types.js';
+import type { KernelType } from '../kernel/types.js';
 import { chamferCurves, Curve2D, dogboneFilletCurves, filletCurves } from '../2d/lib/index.js';
 import { bug } from '../core/errors.js';
 
@@ -20,7 +20,6 @@ import {
   polarAngle2d,
   samePoint,
   distance2d,
-  axis2d,
   polarToCartesian,
   make2dSegmentCurve,
   make2dTangentArc,
@@ -509,10 +508,20 @@ export class BaseSketcher2d {
       this.pointer[1] - this.firstPoint[1],
     ];
 
-    const mirrorAxis = axis2d(this._convertToUV(this.pointer), this._convertToUV(startToEndVector));
+    const uvOrigin = this._convertToUV(this.pointer);
+    const uvDir = this._convertToUV(startToEndVector);
 
     const mirroredCurves = this.pendingCurves.map(
-      (c) => new Curve2D(c.innerCurve.Mirrored_2(mirrorAxis))
+      (c) =>
+        new Curve2D(
+          getKernel().mirrorCurve2dAcrossAxis(
+            c.wrapped,
+            uvOrigin[0],
+            uvOrigin[1],
+            uvDir[0],
+            uvDir[1]
+          )
+        )
     );
     mirroredCurves.reverse();
     for (const c of mirroredCurves) {
@@ -556,29 +565,22 @@ export default class FaceSketcher extends BaseSketcher2d implements GenericSketc
     return [(u - uMin) / (uMax - uMin), (v - vMin) / (vMax - vMin)];
   }
 
-  _adaptSurface(): OcType {
-    const oc = getKernel().oc;
-    return oc.BRep_Tool.Surface_2(this.face.wrapped);
+  _adaptSurface(): KernelType {
+    return getKernel().extractSurfaceFromFace(this.face.wrapped);
   }
 
   /**
    * @ignore
    */
   protected buildWire(): Wire {
-    using scope = new DisposalScope();
-    const oc = getKernel().oc;
-
-    const geomSurf = scope.register(this._adaptSurface());
+    const kernel = getKernel();
+    const geomSurf = this._adaptSurface();
 
     const edges = this.pendingCurves.map((curve) => {
-      return scope.register(
-        createEdge(
-          scope.register(new oc.BRepBuilderAPI_MakeEdge_30(curve.wrapped, geomSurf)).Edge()
-        )
-      );
+      return createEdge(kernel.buildEdgeOnSurface(curve.wrapped, geomSurf));
     });
     const wire = unwrap(assembleWire(edges));
-    oc.BRepLib.BuildCurves3d_2(wire.wrapped);
+    kernel.buildCurves3d(wire.wrapped);
 
     return wire;
   }
@@ -637,7 +639,7 @@ export default class FaceSketcher extends BaseSketcher2d implements GenericSketc
 }
 
 /**
- * Draw 2D curves and produce a {@link Blueprint} (pure-2D shape, no OCCT wire).
+ * Draw 2D curves and produce a {@link Blueprint} (pure-2D shape, no kernel wire).
  *
  * Use this when you need a reusable 2D profile that can later be sketched onto
  * different planes or faces.

@@ -3,38 +3,14 @@
  * All functions accept branded Edge or Wire handles and return plain values.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- OCCT adaptor types are untyped
-type CurveAdaptor = any;
-
 import { getKernel } from '../kernel/index.js';
 import type { Vec3 } from '../core/types.js';
 import type { Edge, Wire } from '../core/shapeTypes.js';
 import { castShape } from '../core/shapeTypes.js';
-import { findCurveType, type CurveType } from '../core/definitionMaps.js';
-import { type Result, ok, err, unwrap } from '../core/result.js';
+import type { CurveType } from '../core/definitionMaps.js';
+import { type Result, ok, err } from '../core/result.js';
 import { typeCastError } from '../core/errors.js';
 import { isWire as isWireGuard, isEdge } from '../core/shapeTypes.js';
-import { DisposalScope } from '../core/disposal.js';
-
-// ---------------------------------------------------------------------------
-// Internal: adaptor creation
-// ---------------------------------------------------------------------------
-
-function getAdaptor(shape: Edge | Wire): CurveAdaptor {
-  const oc = getKernel().oc;
-  const st = shape.wrapped.ShapeType();
-  const e = oc.TopAbs_ShapeEnum;
-  if (st === e.TopAbs_WIRE) {
-    return new oc.BRepAdaptor_CompCurve_2(shape.wrapped, false);
-  }
-  return new oc.BRepAdaptor_Curve_2(shape.wrapped);
-}
-
-function mapParam(adaptor: CurveAdaptor, t: number): number {
-  const first = Number(adaptor.FirstParameter());
-  const last = Number(adaptor.LastParameter());
-  return first + (last - first) * t;
-}
 
 // ---------------------------------------------------------------------------
 // Curve properties
@@ -44,26 +20,19 @@ function mapParam(adaptor: CurveAdaptor, t: number): number {
  * Get the geometric curve type of an edge or wire (LINE, CIRCLE, BSPLINE, etc.).
  */
 export function getCurveType(shape: Edge | Wire): CurveType {
-  using scope = new DisposalScope();
-  const adaptor = scope.register(getAdaptor(shape));
-  const technicalType = adaptor.GetType && adaptor.GetType();
-  return unwrap(findCurveType(technicalType));
+  return getKernel().curveType(shape.wrapped) as CurveType;
 }
 
 /** Get the start point of a curve. */
 export function curveStartPoint(shape: Edge | Wire): Vec3 {
-  using scope = new DisposalScope();
-  const adaptor = scope.register(getAdaptor(shape));
-  const pnt = scope.register(adaptor.Value(adaptor.FirstParameter()));
-  return [pnt.X(), pnt.Y(), pnt.Z()];
+  const [first] = getKernel().curveParameters(shape.wrapped);
+  return getKernel().curvePointAtParam(shape.wrapped, first);
 }
 
 /** Get the end point of a curve. */
 export function curveEndPoint(shape: Edge | Wire): Vec3 {
-  using scope = new DisposalScope();
-  const adaptor = scope.register(getAdaptor(shape));
-  const pnt = scope.register(adaptor.Value(adaptor.LastParameter()));
-  return [pnt.X(), pnt.Y(), pnt.Z()];
+  const [, last] = getKernel().curveParameters(shape.wrapped);
+  return getKernel().curvePointAtParam(shape.wrapped, last);
 }
 
 /**
@@ -72,10 +41,9 @@ export function curveEndPoint(shape: Edge | Wire): Vec3 {
  * @param position - Normalized parameter (0 = start, 0.5 = midpoint, 1 = end).
  */
 export function curvePointAt(shape: Edge | Wire, position = 0.5): Vec3 {
-  using scope = new DisposalScope();
-  const adaptor = scope.register(getAdaptor(shape));
-  const pnt = scope.register(adaptor.Value(mapParam(adaptor, position)));
-  return [pnt.X(), pnt.Y(), pnt.Z()];
+  const [first, last] = getKernel().curveParameters(shape.wrapped);
+  const param = first + (last - first) * position;
+  return getKernel().curvePointAtParam(shape.wrapped, param);
 }
 
 /**
@@ -84,58 +52,40 @@ export function curvePointAt(shape: Edge | Wire, position = 0.5): Vec3 {
  * @param position - Normalized parameter (0 = start, 0.5 = midpoint, 1 = end).
  */
 export function curveTangentAt(shape: Edge | Wire, position = 0.5): Vec3 {
-  const oc = getKernel().oc;
-  using scope = new DisposalScope();
-  const adaptor = scope.register(getAdaptor(shape));
-  const param = mapParam(adaptor, position);
-
-  const tmpPnt = scope.register(new oc.gp_Pnt_1());
-  const tmpVec = scope.register(new oc.gp_Vec_1());
-  adaptor.D1(param, tmpPnt, tmpVec);
-
-  return [tmpVec.X(), tmpVec.Y(), tmpVec.Z()];
+  const [first, last] = getKernel().curveParameters(shape.wrapped);
+  const param = first + (last - first) * position;
+  return getKernel().curveTangent(shape.wrapped, param).tangent;
 }
 
 /** Get the arc length of an edge or wire. */
 export function curveLength(shape: Edge | Wire): number {
-  const oc = getKernel().oc;
-  using scope = new DisposalScope();
-  const props = scope.register(new oc.GProp_GProps_1());
-  oc.BRepGProp.LinearProperties(shape.wrapped, props, true, false);
-  return props.Mass();
+  return getKernel().length(shape.wrapped);
 }
 
 /** Check if the curve is closed. */
 export function curveIsClosed(shape: Edge | Wire): boolean {
-  using scope = new DisposalScope();
-  const adaptor = scope.register(getAdaptor(shape));
-  return adaptor.IsClosed();
+  return getKernel().curveIsClosed(shape.wrapped);
 }
 
 /** Check if the curve is periodic. */
 export function curveIsPeriodic(shape: Edge | Wire): boolean {
-  using scope = new DisposalScope();
-  const adaptor = scope.register(getAdaptor(shape));
-  return adaptor.IsPeriodic();
+  return getKernel().curveIsPeriodic(shape.wrapped);
 }
 
 /** Get the period of a periodic curve. */
 export function curvePeriod(shape: Edge | Wire): number {
-  using scope = new DisposalScope();
-  const adaptor = scope.register(getAdaptor(shape));
-  return adaptor.Period();
+  return getKernel().curvePeriod(shape.wrapped);
 }
 
 /** Get the topological orientation of an edge or wire. */
 export function getOrientation(shape: Edge | Wire): 'forward' | 'backward' {
-  const oc = getKernel().oc;
-  const orient = shape.wrapped.Orientation_1();
-  return orient === oc.TopAbs_Orientation.TopAbs_FORWARD ? 'forward' : 'backward';
+  const orient = getKernel().shapeOrientation(shape.wrapped);
+  return orient === 'forward' ? 'forward' : 'backward';
 }
 
 /** Flip the orientation of an edge or wire. Returns a new shape. */
 export function flipOrientation(shape: Edge | Wire): Edge | Wire {
-  return castShape(shape.wrapped.Reversed()) as Edge | Wire;
+  return castShape(getKernel().reverseShape(shape.wrapped)) as Edge | Wire;
 }
 
 // ---------------------------------------------------------------------------
@@ -243,15 +193,13 @@ export function offsetWire2D(
   offset: number,
   kind: 'arc' | 'intersection' | 'tangent' | 'chamfer' = 'arc'
 ): Result<Wire> {
-  const oc = getKernel().oc;
-  const joinTypes = {
-    arc: oc.GeomAbs_JoinType.GeomAbs_Arc,
-    intersection: oc.GeomAbs_JoinType.GeomAbs_Intersection,
-    tangent: oc.GeomAbs_JoinType.GeomAbs_Tangent,
-    chamfer: oc.GeomAbs_JoinType.GeomAbs_Intersection, // sharp/miter corners
+  const joinMap: Record<string, 'arc' | 'intersection' | 'tangent'> = {
+    arc: 'arc',
+    intersection: 'intersection',
+    tangent: 'tangent',
+    chamfer: 'intersection', // sharp/miter corners
   };
-
-  const resultShape = getKernel().offsetWire2D(wire.wrapped, offset, joinTypes[kind]);
+  const resultShape = getKernel().offsetWire2D(wire.wrapped, offset, joinMap[kind]);
   const wrapped = castShape(resultShape);
 
   if (!isWireGuard(wrapped)) {

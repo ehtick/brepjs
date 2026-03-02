@@ -2,10 +2,10 @@
  * Boolean operations for OCCT shapes.
  *
  * Provides fuse, cut, intersect, and batch operations (fuseAll, cutAll).
- * Used by OCCTAdapter.
+ * Used by DefaultAdapter.
  */
 
-import type { OpenCascadeInstance, OcShape, BooleanOptions } from './types.js';
+import type { KernelInstance, KernelShape, BooleanOptions } from './types.js';
 
 /** Tolerance passed to OCCT SimplifyResult (ShapeUpgrade_UnifySameDomain). */
 const SIMPLIFY_TOLERANCE = 1e-3;
@@ -14,7 +14,7 @@ const SIMPLIFY_TOLERANCE = 1e-3;
  * Applies glue optimization to a boolean operation builder.
  */
 export function applyGlue(
-  oc: OpenCascadeInstance,
+  oc: KernelInstance,
   op: { SetGlue(glue: unknown): void },
   optimisation?: string
 ): void {
@@ -29,7 +29,7 @@ export function applyGlue(
 /**
  * Builds a compound from multiple shapes.
  */
-export function buildCompound(oc: OpenCascadeInstance, shapes: OcShape[]): OcShape {
+export function buildCompound(oc: KernelInstance, shapes: KernelShape[]): KernelShape {
   const builder = new oc.TopoDS_Builder();
   const compound = new oc.TopoDS_Compound();
   builder.MakeCompound(compound);
@@ -44,11 +44,11 @@ export function buildCompound(oc: OpenCascadeInstance, shapes: OcShape[]): OcSha
  * Fuses two shapes together.
  */
 export function fuse(
-  oc: OpenCascadeInstance,
-  shape: OcShape,
-  tool: OcShape,
+  oc: KernelInstance,
+  shape: KernelShape,
+  tool: KernelShape,
   options: BooleanOptions = {}
-): OcShape {
+): KernelShape {
   const { optimisation, simplify = false } = options;
   const progress = new oc.Message_ProgressRange_1();
   const fuseOp = new oc.BRepAlgoAPI_Fuse_3(shape, tool, progress);
@@ -66,11 +66,11 @@ export function fuse(
  * Cuts a tool shape from a base shape.
  */
 export function cut(
-  oc: OpenCascadeInstance,
-  shape: OcShape,
-  tool: OcShape,
+  oc: KernelInstance,
+  shape: KernelShape,
+  tool: KernelShape,
   options: BooleanOptions = {}
-): OcShape {
+): KernelShape {
   const { optimisation, simplify = false } = options;
   const progress = new oc.Message_ProgressRange_1();
   const cutOp = new oc.BRepAlgoAPI_Cut_3(shape, tool, progress);
@@ -88,11 +88,11 @@ export function cut(
  * Intersects two shapes.
  */
 export function intersect(
-  oc: OpenCascadeInstance,
-  shape: OcShape,
-  tool: OcShape,
+  oc: KernelInstance,
+  shape: KernelShape,
+  tool: KernelShape,
   options: BooleanOptions = {}
-): OcShape {
+): KernelShape {
   const { optimisation, simplify = false } = options;
   const progress = new oc.Message_ProgressRange_1();
   const commonOp = new oc.BRepAlgoAPI_Common_3(shape, tool, progress);
@@ -111,11 +111,11 @@ export function intersect(
  * the intersection edges/wires.
  */
 export function section(
-  oc: OpenCascadeInstance,
-  shape: OcShape,
-  tool: OcShape,
+  oc: KernelInstance,
+  shape: KernelShape,
+  tool: KernelShape,
   approximation: boolean = true
-): OcShape {
+): KernelShape {
   const progress = new oc.Message_ProgressRange_1();
   const sectionOp = new oc.BRepAlgoAPI_Section_3(shape, tool, false);
   sectionOp.Approximation(approximation);
@@ -136,10 +136,10 @@ export function section(
  * Fuses multiple shapes using C++ batch operation.
  */
 function fuseAllBatch(
-  oc: OpenCascadeInstance,
-  shapes: OcShape[],
+  oc: KernelInstance,
+  shapes: KernelShape[],
   options: BooleanOptions = {}
-): OcShape {
+): KernelShape {
   const { optimisation, simplify = false } = options;
   const batch = new oc.BooleanBatch();
   for (const s of shapes) {
@@ -155,10 +155,10 @@ function fuseAllBatch(
  * Fuses multiple shapes using native OCCT N-way general fuse.
  */
 function fuseAllNative(
-  oc: OpenCascadeInstance,
-  shapes: OcShape[],
+  oc: KernelInstance,
+  shapes: KernelShape[],
   options: BooleanOptions = {}
-): OcShape {
+): KernelShape {
   const { optimisation, simplify = false } = options;
 
   const argList = new oc.TopTools_ListOfShape_1();
@@ -193,19 +193,18 @@ function fuseAllNative(
  * Uses start/end indices to avoid array allocations on each recursive call.
  */
 function fuseAllPairwiseRange(
-  oc: OpenCascadeInstance,
-  shapes: OcShape[],
+  oc: KernelInstance,
+  shapes: KernelShape[],
   start: number,
   end: number,
   options: BooleanOptions
-): OcShape {
+): KernelShape {
   options.signal?.throwIfAborted();
   const count = end - start;
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- bounds checked by caller
   if (count === 1) return shapes[start]!;
   if (count === 2) {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- bounds checked by caller
-    return fuse(oc, shapes[start]!, shapes[start + 1]!, { ...options, simplify: false });
+    return fuse(oc, shapes[start], shapes[start + 1], { ...options, simplify: false });
   }
 
   const mid = start + Math.ceil(count / 2);
@@ -218,10 +217,10 @@ function fuseAllPairwiseRange(
  * Fuses multiple shapes using recursive pairwise fusion.
  */
 function fuseAllPairwise(
-  oc: OpenCascadeInstance,
-  shapes: OcShape[],
+  oc: KernelInstance,
+  shapes: KernelShape[],
   options: BooleanOptions = {}
-): OcShape {
+): KernelShape {
   const result = fuseAllPairwiseRange(oc, shapes, 0, shapes.length, options);
   // Apply simplify only at the end if requested
   if (options.simplify) {
@@ -238,10 +237,10 @@ function fuseAllPairwise(
  * Fuses all given shapes in a single operation.
  */
 export function fuseAll(
-  oc: OpenCascadeInstance,
-  shapes: OcShape[],
+  oc: KernelInstance,
+  shapes: KernelShape[],
   options: BooleanOptions = {}
-): OcShape {
+): KernelShape {
   if (shapes.length === 0) throw new Error('fuseAll requires at least one shape');
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   if (shapes.length === 1) return shapes[0]!;
@@ -263,7 +262,7 @@ export function fuseAll(
  * Splits a shape using one or more tool shapes via BRepAlgoAPI_Splitter.
  * The result contains all the pieces from the split.
  */
-export function split(oc: OpenCascadeInstance, shape: OcShape, tools: OcShape[]): OcShape {
+export function split(oc: KernelInstance, shape: KernelShape, tools: KernelShape[]): KernelShape {
   if (!oc.BRepAlgoAPI_Splitter) {
     throw new Error('BRepAlgoAPI_Splitter not available in this WASM build');
   }
@@ -296,11 +295,11 @@ export function split(oc: OpenCascadeInstance, shape: OcShape, tools: OcShape[])
  * Cuts all tool shapes from a base shape using C++ batch operation.
  */
 function cutAllBatch(
-  oc: OpenCascadeInstance,
-  shape: OcShape,
-  tools: OcShape[],
+  oc: KernelInstance,
+  shape: KernelShape,
+  tools: KernelShape[],
   options: BooleanOptions = {}
-): OcShape {
+): KernelShape {
   const { optimisation, simplify = false } = options;
   const batch = new oc.BooleanBatch();
   for (const t of tools) {
@@ -316,11 +315,11 @@ function cutAllBatch(
  * Cuts all tool shapes from a base shape.
  */
 export function cutAll(
-  oc: OpenCascadeInstance,
-  shape: OcShape,
-  tools: OcShape[],
+  oc: KernelInstance,
+  shape: KernelShape,
+  tools: KernelShape[],
   options: BooleanOptions = {}
-): OcShape {
+): KernelShape {
   if (tools.length === 0) return shape;
 
   // Prefer C++ BooleanBatch (single WASM call) when available
