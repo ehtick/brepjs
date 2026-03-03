@@ -1763,3 +1763,218 @@ if (!isValid(shelled)) {
 const desc = describe(shelled);
 console.log(`${desc.kind}: ${desc.faceCount} faces, ${desc.edgeCount} edges, valid: ${desc.valid}`);
 ```
+
+---
+
+# Internal Development Reference
+
+For contributors and AI agents working on brepjs internals (not for library consumers).
+
+## Architecture Rules
+
+- **Layer boundaries**: imports flow downward only (Layer 0 ← Layer 1 ← Layer 2 ← Layer 3). Enforced by `npm run check:boundaries`.
+- **Kernel access**: Layer 2+ code calls `getKernel().method(shape.wrapped)` — never access `.wrapped` methods directly. ESLint enforces this.
+- **Functional API**: All new code goes in `*Fns.ts` files. Never add methods to legacy class wrappers.
+- **Result types**: Layer 2+ functions return `Result<T, BrepError>` — never throw.
+- **ESM imports**: All `.ts` imports must use `.js` extensions.
+- **`withKernel(id, fn)` is sync-only** — async callbacks silently use the wrong kernel after the first `await`.
+
+## Verification (fastest → slowest)
+
+| Command | What | Time |
+|---------|------|------|
+| `npm run typecheck` | Type errors | ~5s |
+| `npm run lint` | Style + banned patterns | ~3s |
+| `npm run check:boundaries` | Layer imports | ~2s |
+| `npm run format:check` | Formatting | ~2s |
+| `npx vitest run tests/<file>.test.ts` | Single test | ~5s |
+| `npm run test:affected` | Changed file tests | ~10s |
+| `npm run test:coverage` | Full suite | ~30s |
+| `npm run validate` | All above except single test and full suite | ~22s |
+
+## Functional API Pattern
+
+Template for all `*Fns.ts` files. Follow exactly when adding new operations.
+
+```typescript
+// src/topology/booleanFns.ts — fuse() is the canonical example
+
+/**
+ * Fuse two 3D shapes together (boolean union). Returns a new shape.
+ *
+ * @param a - The first operand.
+ * @param b - The second operand.
+ * @param options - Boolean operation options.
+ * @returns Ok with the fused shape, or Err if the result is not 3D.
+ *
+ * @example
+ * ```ts
+ * const result = fuse(box, cylinder);
+ * if (isOk(result)) console.log(describe(result.value));
+ * ```
+ */
+export function fuse(
+  a: Shape3D,
+  b: Shape3D,
+  { optimisation = 'none', simplify = false, signal }: BooleanOptions = {}
+): Result<Shape3D> {
+  if (signal?.aborted) throw signal.reason;
+  // 1. Validate inputs
+  const checkA = validateShape3D(a, 'fuse: first operand');
+  if (isErr(checkA)) return checkA;
+  const checkB = validateShape3D(b, 'fuse: second operand');
+  if (isErr(checkB)) return checkB;
+  // 2. Call kernel (never call .wrapped methods directly)
+  const inputFaceHashes = collectInputFaceHashes([a, b]);
+  const { shape: resultShape, evolution } = getKernel().fuseWithHistory(
+    a.wrapped, b.wrapped, inputFaceHashes, HASH_CODE_MAX, { optimisation, simplify }
+  );
+  // 3. Cast result and check type
+  const fuseResult = castToShape3D(resultShape, 'FUSE_NOT_3D', 'Fuse did not produce a 3D shape');
+  // 4. Propagate metadata
+  if (fuseResult.ok) {
+    propagateOriginsFromEvolution(evolution, [a, b], fuseResult.value);
+    propagateFaceTagsFromEvolution(evolution, [a, b], fuseResult.value);
+    propagateColorsFromEvolution(evolution, [a, b], fuseResult.value);
+  }
+  return fuseResult;
+}
+```
+
+## Test Pattern
+
+```typescript
+import { describe, expect, it, beforeAll } from 'vitest';
+import { initOC } from './setup.js';
+import { box, fuse, isOk, unwrap, measureVolume, isSolid } from '../src/index.js';
+
+beforeAll(async () => {
+  await initOC();
+}, 30000);
+
+describe('fuse', () => {
+  it('fuses two boxes', () => {
+    const a = box(10, 10, 10);
+    const b = box(10, 10, 10);
+    const result = fuse(a, b);
+    expect(isOk(result)).toBe(true);
+    const shape = unwrap(result);
+    expect(isSolid(shape)).toBe(true);
+    expect(measureVolume(shape)).toBeCloseTo(1000, 0); // geometry: use toBeCloseTo
+  });
+});
+```
+
+## Branded Shape Types (src/core/shapeTypes.ts)
+
+```typescript
+type Vertex   = ShapeHandle & { readonly [__brand]: 'vertex' };
+type Edge     = ShapeHandle & { readonly [__brand]: 'edge' };
+type Wire     = ShapeHandle & { readonly [__brand]: 'wire' };
+type Face     = ShapeHandle & { readonly [__brand]: 'face' };
+type Shell    = ShapeHandle & { readonly [__brand]: 'shell' };
+type Solid    = ShapeHandle & { readonly [__brand]: 'solid' };
+type CompSolid = ShapeHandle & { readonly [__brand]: 'compsolid' };
+type Compound = ShapeHandle & { readonly [__brand]: 'compound' };
+
+type AnyShape = Vertex | Edge | Wire | Face | Shell | Solid | CompSolid | Compound;
+type Shape1D  = Edge | Wire;
+type Shape3D  = Shell | Solid | CompSolid | Compound;
+
+// Factories — always use these, never raw casts
+createVertex(ocShape): Vertex
+createEdge(ocShape): Edge
+castShape(ocShape): AnyShape  // Auto-detects type
+
+// Type guards
+isVertex(s): s is Vertex
+isEdge(s): s is Edge
+isSolid(s): s is Solid
+isShape3D(s): s is Shape3D
+```
+
+## All Error Codes (src/core/errors.ts)
+
+```typescript
+const BrepErrorCode = {
+  // Kernel operation failures
+  BSPLINE_FAILED, FACE_BUILD_FAILED, SWEEP_FAILED, LOFT_FAILED,
+  FUSE_FAILED, CUT_FAILED, HEAL_NO_EFFECT,
+
+  // Validation
+  ELLIPSE_RADII, FUSE_ALL_EMPTY, FILLET_NO_EDGES, CHAMFER_NO_EDGES,
+  CHAMFER_ANGLE_NO_EDGES, CHAMFER_ANGLE_BAD_DISTANCE, CHAMFER_ANGLE_BAD_ANGLE,
+  BEZIER_MIN_POINTS, POLYGON_MIN_POINTS, ZERO_LENGTH_EXTRUSION, ZERO_TWIST_ANGLE,
+  LOFT_EMPTY, UNSUPPORTED_PROFILE, UNKNOWN_PLANE, NULL_SHAPE_INPUT,
+  INVALID_FILLET_RADIUS, INVALID_CHAMFER_DISTANCE, INVALID_THICKNESS, ZERO_OFFSET,
+  NO_EDGES, NO_FACES,
+
+  // Type cast
+  FUSE_NOT_3D, CUT_NOT_3D, INTERSECT_NOT_3D, FUSE_ALL_NOT_3D, CUT_ALL_NOT_3D,
+  LOFT_NOT_3D, SWEEP_NOT_3D, REVOLUTION_NOT_3D, FILLET_NOT_3D, CHAMFER_NOT_3D,
+  CHAMFER_ANGLE_NOT_3D, CHAMFER_ANGLE_FAILED, SHELL_NOT_3D, OFFSET_NOT_3D,
+  NULL_SHAPE, NO_WRAPPER, WELD_NOT_SHELL, SOLID_BUILD_FAILED, OFFSET_NOT_WIRE,
+  UNKNOWN_SURFACE_TYPE, UNKNOWN_CURVE_TYPE, SWEEP_START_NOT_WIRE, SWEEP_END_NOT_WIRE,
+
+  // I/O
+  STEP_EXPORT_FAILED, STEP_FILE_READ_ERROR, STL_EXPORT_FAILED, STL_FILE_READ_ERROR,
+  STEP_IMPORT_FAILED, STL_IMPORT_FAILED, IGES_EXPORT_FAILED, IGES_IMPORT_FAILED,
+  DXF_IMPORT_FAILED, OBJ_IMPORT_FAILED, THREEMF_IMPORT_FAILED,
+
+  // Computation
+  PARAMETER_NOT_FOUND, INTERSECTION_FAILED, SELF_INTERSECTION_FAILED,
+
+  // Compound
+  COMPOUND_NO_FACES, COMPOUND_FACE_NOT_FOUND,
+
+  // Query
+  FINDER_NOT_UNIQUE,
+
+  // Hull
+  HULL_EMPTY_INPUT, HULL_FAILED, HULL_DEGENERATE, HULL_NOT_3D,
+
+  // Minkowski
+  MINKOWSKI_FAILED, MINKOWSKI_NULL_TOOL, MINKOWSKI_NOT_3D,
+
+  // Polyhedron
+  POLYHEDRON_INSUFFICIENT_POINTS, POLYHEDRON_INSUFFICIENT_FACES,
+  POLYHEDRON_INVALID_INDEX, POLYHEDRON_FAILED,
+
+  // Domain-specific
+  ROOF_FAILED,
+  MULTI_SWEEP_INSUFFICIENT_SECTIONS, MULTI_SWEEP_FAILED,
+  GUIDED_SWEEP_FAILED,
+  SURFACE_GRID_TOO_SMALL, SURFACE_GRID_JAGGED, SURFACE_FAILED,
+  ASSEMBLY_MATE_INVALID, ASSEMBLY_SOLVE_FAILED, ASSEMBLY_NOT_CONVERGED,
+} as const;
+```
+
+## KernelAdapter Interface Summary (src/kernel/types.ts)
+
+The KernelAdapter has ~170 methods. Key categories:
+
+**Boolean ops**: `fuse`, `cut`, `intersect`, `section`, `fuseAll`, `cutAll`
+**Primitives**: `makeBox`, `makeCylinder`, `makeSphere`, `makeCone`, `makeTorus`, `makeEllipsoid`
+**Edges/Wires**: `makeLineEdge`, `makeCircleEdge`, `makeArcEdge`, `makeBezierEdge`, `makeHelixWire`, `makeWire`
+**Extrusion/Sweep**: `extrude`, `revolve`, `loft`, `sweep`, `sweepPipeShell`, `loftAdvanced`
+**Modification**: `fillet`, `chamfer`, `chamferDistAngle`, `shell`, `thicken`, `offset`
+**Transforms**: `translate`, `rotate`, `mirror`, `scale`, `generalTransform`
+**History variants**: `fuseWithHistory`, `cutWithHistory`, `filletWithHistory`, etc. — return `{ shape, evolution }`
+**Measurement**: `volume`, `area`, `length`, `centerOfMass`, `boundingBox`
+**Topology**: `iterShapes`, `shapeType`, `isSame`, `hashCode`, `downcast`
+**Geometry queries**: `surfaceType`, `surfaceNormal`, `curveTangent`, `curveType`, `vertexPosition`
+**I/O**: `exportSTEP`, `importSTEP`, `exportSTL`, `importSTL`, `exportIGES`, `importIGES`
+**Repair**: `isValid`, `sew`, `healSolid`, `fixShape`, `fixSelfIntersection`
+**Meshing**: `mesh`, `meshEdges`
+
+All methods accept `KernelShape` (opaque handle) — callers pass `shape.wrapped`.
+
+## Gotchas
+
+- OCCT Emscripten returns enum objects with `.value` — extract: `typeof val === 'number' ? val : Number(val?.value ?? val)`
+- `autoHeal` short-circuits valid shapes: `report.alreadyValid=true`, no sew/heal diagnostics run
+- Assembly solver uses original face coordinates — distance constraints don't compose across multiple mates
+- `Uint32Array` from WASM: always convert to regular `Array` before passing to kernel methods
+- `DisposalScope` disposes in LIFO order — register dependencies after their dependees
+- `noUncheckedIndexedAccess` enabled — array indexing returns `T | undefined`, add bounds checks
+- `exactOptionalPropertyTypes` enabled — use `prop?: T | undefined` for optional fields
