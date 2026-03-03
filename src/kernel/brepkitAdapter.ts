@@ -112,6 +112,48 @@ function unwrap(shape: KernelShape, expected?: ShapeType): number {
   return shape.id;
 }
 
+/** Unwrap a shape that must be a solid, with a descriptive error naming the method. */
+function unwrapSolidOrThrow(shape: KernelShape, methodName: string): number {
+  if (!isBrepkitHandle(shape)) {
+    throw new Error('brepkit: expected a BrepkitHandle, got ' + typeof shape);
+  }
+  if (shape.type !== 'solid') {
+    throw new Error(
+      `brepkit: ${methodName} requires a solid, got ${shape.type}. ` +
+        'Consider using makeCompound() to combine shapes first.'
+    );
+  }
+  return shape.id;
+}
+
+/**
+ * Extract solid ids from a shape. For solids, returns the id directly.
+ * For compounds, attempts to extract child solids via getCompoundSolids.
+ * Throws a descriptive error for other types.
+ */
+function unwrapSolidsForExport(
+  bk: BrepkitKernel,
+  shape: KernelShape,
+  methodName: string
+): number[] {
+  if (!isBrepkitHandle(shape)) {
+    throw new Error('brepkit: expected a BrepkitHandle, got ' + typeof shape);
+  }
+  if (shape.type === 'solid') {
+    return [shape.id];
+  }
+  if (shape.type === 'compound' && bk.getCompoundSolids) {
+    const ids = bk.getCompoundSolids(shape.id);
+    if (ids.length > 0) return ids;
+    throw new Error(
+      `brepkit: ${methodName} received a compound with no solids.`
+    );
+  }
+  throw new Error(
+    `brepkit: ${methodName} requires a solid or compound of solids, got ${shape.type}.`
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Matrix helpers
 // ---------------------------------------------------------------------------
@@ -196,6 +238,27 @@ function affineMatrix(
   ];
 }
 
+/** Build a 4×4 reflection matrix for a plane defined by origin + normal. */
+function mirrorMatrix(
+  origin: [number, number, number],
+  normal: [number, number, number]
+): number[] {
+  const [ox, oy, oz] = origin;
+  const len = Math.sqrt(normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2);
+  const nx = normal[0] / len;
+  const ny = normal[1] / len;
+  const nz = normal[2] / len;
+  // Householder reflection: I - 2*n*n^T, translated to origin
+  const d = 2 * (ox * nx + oy * ny + oz * nz);
+  // prettier-ignore
+  return [
+    1 - 2*nx*nx,  -2*nx*ny,     -2*nx*nz,     d*nx,
+    -2*ny*nx,     1 - 2*ny*ny,  -2*ny*nz,     d*ny,
+    -2*nz*nx,     -2*nz*ny,     1 - 2*nz*nz,  d*nz,
+    0,            0,            0,             1,
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // Deflection defaults
 // ---------------------------------------------------------------------------
@@ -252,17 +315,17 @@ export class BrepkitAdapter implements KernelAdapter {
   // ═══════════════════════════════════════════════════════════════════════
 
   fuse(shape: KernelShape, tool: KernelShape, _options?: BooleanOptions): KernelShape {
-    const result = this.bk.fuse(unwrap(shape, 'solid'), unwrap(tool, 'solid'));
+    const result = this.bk.fuse(unwrapSolidOrThrow(shape, 'fuse'), unwrapSolidOrThrow(tool, 'fuse'));
     return solidHandle(result);
   }
 
   cut(shape: KernelShape, tool: KernelShape, _options?: BooleanOptions): KernelShape {
-    const result = this.bk.cut(unwrap(shape, 'solid'), unwrap(tool, 'solid'));
+    const result = this.bk.cut(unwrapSolidOrThrow(shape, 'cut'), unwrapSolidOrThrow(tool, 'cut'));
     return solidHandle(result);
   }
 
   intersect(shape: KernelShape, tool: KernelShape, _options?: BooleanOptions): KernelShape {
-    const result = this.bk.intersect(unwrap(shape, 'solid'), unwrap(tool, 'solid'));
+    const result = this.bk.intersect(unwrapSolidOrThrow(shape, 'intersect'), unwrapSolidOrThrow(tool, 'intersect'));
     return solidHandle(result);
   }
 
@@ -281,8 +344,38 @@ export class BrepkitAdapter implements KernelAdapter {
     );
 
     if (faces.length === 0) {
-      throw new Error('brepkit: section produced no faces');
+      // Return empty compound instead of throwing — matches OCCT behavior
+      return compoundHandle(this.bk.makeCompound([]));
     }
+
+    // Extract edges from section faces and return as compound of edges
+    const allEdgeIds: number[] = [];
+    const seen = new Set<number>();
+    for (const fid of faces) {
+      const edgeIds: number[] = this.bk.getFaceEdges(fid);
+      for (const eid of edgeIds) {
+        if (!seen.has(eid)) {
+          seen.add(eid);
+          allEdgeIds.push(eid);
+        }
+      }
+    }
+
+    if (allEdgeIds.length === 0) {
+      return compoundHandle(this.bk.makeCompound([]));
+    }
+
+    // If there's a single face, return a wire from its edges
+    if (faces.length === 1) {
+      try {
+        const wireId = this.bk.makeWire(allEdgeIds, true);
+        return wireHandle(wireId);
+      } catch {
+        return faceHandle(faces[0]!);
+      }
+    }
+
+    // Multiple section faces — return compound of the faces
     return faceHandle(faces[0]!);
   }
 
@@ -318,9 +411,9 @@ export class BrepkitAdapter implements KernelAdapter {
       normal[1],
       normal[2]
     );
-    // brepkit returns [positive, negative]. brepjs expects a single shape
-    // (the OCCT adapter returns a compound). Return the positive half.
-    return solidHandle(result[0]!);
+    // brepkit returns [positive, negative]. brepjs expects a compound of
+    // all fragments (matching OCCT behavior).
+    return compoundHandle(this.bk.makeCompound(result));
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -910,7 +1003,7 @@ export class BrepkitAdapter implements KernelAdapter {
   ): KernelShape {
     const r = typeof radius === 'number' ? radius : Array.isArray(radius) ? radius[0] : 1;
     const edgeIds = edges.map((e) => unwrap(e, 'edge'));
-    const id = this.bk.fillet(unwrap(shape, 'solid'), edgeIds, r);
+    const id = this.bk.fillet(unwrapSolidOrThrow(shape, 'fillet'), edgeIds, r);
     return solidHandle(id);
   }
 
@@ -921,7 +1014,7 @@ export class BrepkitAdapter implements KernelAdapter {
   ): KernelShape {
     const d = typeof distance === 'number' ? distance : Array.isArray(distance) ? distance[0] : 1;
     const edgeIds = edges.map((e) => unwrap(e, 'edge'));
-    const id = this.bk.chamfer(unwrap(shape, 'solid'), edgeIds, d);
+    const id = this.bk.chamfer(unwrapSolidOrThrow(shape, 'chamfer'), edgeIds, d);
     return solidHandle(id);
   }
 
@@ -944,7 +1037,7 @@ export class BrepkitAdapter implements KernelAdapter {
     _tolerance?: number
   ): KernelShape {
     const faceIds = faces.map((f) => unwrap(f, 'face'));
-    const id = this.bk.shell(unwrap(shape, 'solid'), thickness, faceIds);
+    const id = this.bk.shell(unwrapSolidOrThrow(shape, 'shell'), thickness, faceIds);
     return solidHandle(id);
   }
 
@@ -959,7 +1052,7 @@ export class BrepkitAdapter implements KernelAdapter {
   }
 
   offset(shape: KernelShape, distance: number, _tolerance?: number): KernelShape {
-    const id = this.bk.offsetSolid(unwrap(shape, 'solid'), distance);
+    const id = this.bk.offsetSolid(unwrapSolidOrThrow(shape, 'offset'), distance);
     return solidHandle(id);
   }
 
@@ -993,16 +1086,21 @@ export class BrepkitAdapter implements KernelAdapter {
     origin: [number, number, number],
     normal: [number, number, number]
   ): KernelShape {
-    const id = this.bk.mirror(
-      unwrap(shape, 'solid'),
-      origin[0],
-      origin[1],
-      origin[2],
-      normal[0],
-      normal[1],
-      normal[2]
-    );
-    return solidHandle(id);
+    const h = shape as BrepkitHandle;
+    if (h.type === 'solid') {
+      const id = this.bk.mirror(
+        h.id,
+        origin[0],
+        origin[1],
+        origin[2],
+        normal[0],
+        normal[1],
+        normal[2]
+      );
+      return solidHandle(id);
+    }
+    // Non-solids: construct mirror reflection matrix and use applyMatrix
+    return this.applyMatrix(shape, mirrorMatrix(origin, normal));
   }
 
   scale(shape: KernelShape, center: [number, number, number], factor: number): KernelShape {
@@ -1344,14 +1442,19 @@ export class BrepkitAdapter implements KernelAdapter {
     // brepkit exports one solid at a time — concatenate for multi-shape
     const parts: string[] = [];
     for (const shape of shapes) {
-      const bytes: Uint8Array = this.bk.exportStep(unwrap(shape, 'solid'));
-      parts.push(new TextDecoder().decode(bytes));
+      const solidIds = unwrapSolidsForExport(this.bk, shape, 'exportSTEP');
+      for (const sid of solidIds) {
+        const bytes: Uint8Array = this.bk.exportStep(sid);
+        parts.push(new TextDecoder().decode(bytes));
+      }
     }
     return parts.join('\n');
   }
 
   exportSTL(shape: KernelShape, binary?: boolean): string | ArrayBuffer {
-    const bytes: Uint8Array = this.bk.exportStl(unwrap(shape, 'solid'), DEFAULT_DEFLECTION);
+    const solidIds = unwrapSolidsForExport(this.bk, shape, 'exportSTL');
+    // Use the first solid; STL format doesn't natively support multi-solid
+    const bytes: Uint8Array = this.bk.exportStl(solidIds[0]!, DEFAULT_DEFLECTION);
     if (binary) return bytes.buffer as ArrayBuffer;
     return new TextDecoder().decode(bytes);
   }
@@ -1372,8 +1475,11 @@ export class BrepkitAdapter implements KernelAdapter {
     if (shapes.length === 0) return '';
     const parts: string[] = [];
     for (const shape of shapes) {
-      const bytes: Uint8Array = this.bk.exportIges(unwrap(shape, 'solid'));
-      parts.push(new TextDecoder().decode(bytes));
+      const solidIds = unwrapSolidsForExport(this.bk, shape, 'exportIGES');
+      for (const sid of solidIds) {
+        const bytes: Uint8Array = this.bk.exportIges(sid);
+        parts.push(new TextDecoder().decode(bytes));
+      }
     }
     return parts.join('\n');
   }
@@ -1397,7 +1503,9 @@ export class BrepkitAdapter implements KernelAdapter {
   // ═══════════════════════════════════════════════════════════════════════
 
   volume(shape: KernelShape): number {
-    return this.bk.volume(unwrap(shape, 'solid'), DEFAULT_DEFLECTION);
+    const h = shape as BrepkitHandle;
+    if (h.type !== 'solid') return 0;
+    return this.bk.volume(unwrap(shape), DEFAULT_DEFLECTION);
   }
 
   area(shape: KernelShape): number {
@@ -1405,7 +1513,19 @@ export class BrepkitAdapter implements KernelAdapter {
     if (h.type === 'face') {
       return this.bk.faceArea(unwrap(shape), DEFAULT_DEFLECTION);
     }
-    return this.bk.surfaceArea(unwrap(shape, 'solid'), DEFAULT_DEFLECTION);
+    if (h.type === 'solid') {
+      return this.bk.surfaceArea(unwrap(shape), DEFAULT_DEFLECTION);
+    }
+    if (h.type === 'compound') {
+      // Sum areas of all faces in the compound
+      const faces = this.iterShapes(shape, 'face');
+      let total = 0;
+      for (const face of faces) {
+        total += this.bk.faceArea(unwrap(face), DEFAULT_DEFLECTION);
+      }
+      return total;
+    }
+    return 0;
   }
 
   length(shape: KernelShape): number {
@@ -1421,8 +1541,41 @@ export class BrepkitAdapter implements KernelAdapter {
   }
 
   centerOfMass(shape: KernelShape): [number, number, number] {
-    const result: number[] = this.bk.centerOfMass(unwrap(shape, 'solid'), DEFAULT_DEFLECTION);
-    return [result[0]!, result[1]!, result[2]!];
+    const h = shape as BrepkitHandle;
+    if (h.type === 'solid') {
+      const result: number[] = this.bk.centerOfMass(unwrap(shape), DEFAULT_DEFLECTION);
+      return [result[0]!, result[1]!, result[2]!];
+    }
+    if (h.type === 'face') {
+      // Evaluate surface at the center of the UV domain
+      const domain = this.uvBounds(shape);
+      const uMid = (domain.uMin + domain.uMax) / 2;
+      const vMid = (domain.vMin + domain.vMax) / 2;
+      return this.pointOnSurface(shape, uMid, vMid);
+    }
+    if (h.type === 'edge') {
+      // Use midpoint of edge vertices
+      const verts: number[] = this.bk.getEdgeVertices(h.id);
+      return [
+        (verts[0]! + verts[3]!) / 2,
+        (verts[1]! + verts[4]!) / 2,
+        (verts[2]! + verts[5]!) / 2,
+      ];
+    }
+    if (h.type === 'vertex') {
+      return this.vertexPosition(shape);
+    }
+    // Fallback for compounds, shells, wires: average vertex positions
+    const vertices = this.iterShapes(shape, 'vertex');
+    if (vertices.length > 0) {
+      let sx = 0, sy = 0, sz = 0;
+      for (const v of vertices) {
+        const p = this.vertexPosition(v);
+        sx += p[0]; sy += p[1]; sz += p[2];
+      }
+      return [sx / vertices.length, sy / vertices.length, sz / vertices.length];
+    }
+    return [0, 0, 0];
   }
 
   linearCenterOfMass(shape: KernelShape): [number, number, number] {
@@ -1444,11 +1597,33 @@ export class BrepkitAdapter implements KernelAdapter {
     min: [number, number, number];
     max: [number, number, number];
   } {
-    const bb: number[] = this.bk.boundingBox(unwrap(shape, 'solid'));
-    return {
-      min: [bb[0]!, bb[1]!, bb[2]!],
-      max: [bb[3]!, bb[4]!, bb[5]!],
-    };
+    const h = shape as BrepkitHandle;
+    if (h.type === 'solid') {
+      const bb: number[] = this.bk.boundingBox(unwrap(shape));
+      return {
+        min: [bb[0]!, bb[1]!, bb[2]!],
+        max: [bb[3]!, bb[4]!, bb[5]!],
+      };
+    }
+    if (h.type === 'vertex') {
+      const pos = this.vertexPosition(shape);
+      return { min: [...pos], max: [...pos] };
+    }
+    // For faces, edges, wires, compounds, shells: compute from vertex positions
+    const vertices = this.iterShapes(shape, 'vertex');
+    if (vertices.length === 0) {
+      return { min: [0, 0, 0], max: [0, 0, 0] };
+    }
+    const first = this.vertexPosition(vertices[0]);
+    let minX = first[0], minY = first[1], minZ = first[2];
+    let maxX = first[0], maxY = first[1], maxZ = first[2];
+    for (let i = 1; i < vertices.length; i++) {
+      const p = this.vertexPosition(vertices[i]);
+      if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
+      if (p[2] < minZ) minZ = p[2]; if (p[2] > maxZ) maxZ = p[2];
+    }
+    return { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] };
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1654,7 +1829,7 @@ export class BrepkitAdapter implements KernelAdapter {
     // Run healing to merge coincident vertices and fix orientations
     if ((shape as BrepkitHandle).type === 'solid') {
       try {
-        this.bk.healSolid(unwrap(shape, 'solid'));
+        this.bk.healSolid(unwrap(shape));
       } catch {
         // Healing can fail on complex topologies — return unchanged
       }
@@ -1680,8 +1855,15 @@ export class BrepkitAdapter implements KernelAdapter {
   }
 
   healSolid(shape: KernelShape): KernelShape | null {
+    const h = shape as BrepkitHandle;
+    if (h.type !== 'solid') {
+      throw new Error(
+        `brepkit: healSolid requires a solid, got ${h.type}. ` +
+          'Consider using makeCompound() to combine shapes first.'
+      );
+    }
     try {
-      this.bk.healSolid(unwrap(shape, 'solid'));
+      this.bk.healSolid(unwrap(shape));
       return shape; // Healing modifies in-place; return same handle
     } catch {
       return null;
@@ -2064,7 +2246,16 @@ export class BrepkitAdapter implements KernelAdapter {
   }
 
   sewAndSolidify(faces: KernelShape[], tolerance: number): KernelShape {
-    return this.sew(faces, tolerance);
+    const faceIds = faces.map((s) => unwrap(s, 'face'));
+    const shellOrSolid = this.bk.sewFaces(faceIds, tolerance);
+    // sewFaces may return a shell — try to solidify it
+    try {
+      const solidId = this.bk.solidFromShell(shellOrSolid);
+      return solidHandle(solidId);
+    } catch {
+      // solidFromShell failed — return as solid (sewFaces already returns solid handle)
+      return solidHandle(shellOrSolid);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
