@@ -112,6 +112,11 @@ function unwrap(shape: KernelShape, expected?: ShapeType): number {
   return shape.id;
 }
 
+/** Convert a WASM Uint32Array of handles to a plain number[] for use with .map/.filter/.flatMap. */
+function toArray(ids: Uint32Array): number[] {
+  return Array.from(ids);
+}
+
 /** Unwrap a shape that must be a solid, with a descriptive error naming the method. */
 function unwrapSolidOrThrow(shape: KernelShape, methodName: string): number {
   if (!isBrepkitHandle(shape)) {
@@ -143,7 +148,7 @@ function unwrapSolidsForExport(
     return [shape.id];
   }
   if (shape.type === 'compound' && bk.getCompoundSolids) {
-    const ids = bk.getCompoundSolids(shape.id);
+    const ids = toArray(bk.getCompoundSolids(shape.id));
     if (ids.length > 0) return ids;
     throw new Error(`brepkit: ${methodName} received a compound with no solids.`);
   }
@@ -337,14 +342,16 @@ export class BrepkitAdapter implements KernelAdapter {
     // brepjs passes a face as the plane — extract normal + point.
     const { point, normal } = this.extractPlaneFromFace(plane);
 
-    const faces: number[] = this.bk.section(
-      unwrap(shape, 'solid'),
-      point[0],
-      point[1],
-      point[2],
-      normal[0],
-      normal[1],
-      normal[2]
+    const faces = toArray(
+      this.bk.section(
+        unwrap(shape, 'solid'),
+        point[0],
+        point[1],
+        point[2],
+        normal[0],
+        normal[1],
+        normal[2]
+      )
     );
 
     if (faces.length === 0) {
@@ -356,7 +363,7 @@ export class BrepkitAdapter implements KernelAdapter {
     const allEdgeIds: number[] = [];
     const seen = new Set<number>();
     for (const fid of faces) {
-      const edgeIds: number[] = this.bk.getFaceEdges(fid);
+      const edgeIds = toArray(this.bk.getFaceEdges(fid));
       for (const eid of edgeIds) {
         if (!seen.has(eid)) {
           seen.add(eid);
@@ -408,14 +415,16 @@ export class BrepkitAdapter implements KernelAdapter {
     if (tools.length === 0) throw new Error('brepkit: split requires at least one tool');
     const { point, normal } = this.extractPlaneFromFace(tools[0]);
 
-    const result: number[] = this.bk.split(
-      unwrap(shape, 'solid'),
-      point[0],
-      point[1],
-      point[2],
-      normal[0],
-      normal[1],
-      normal[2]
+    const result = toArray(
+      this.bk.split(
+        unwrap(shape, 'solid'),
+        point[0],
+        point[1],
+        point[2],
+        normal[0],
+        normal[1],
+        normal[2]
+      )
     );
     // brepkit returns [positive, negative]. brepjs expects a compound of
     // all fragments (matching OCCT behavior).
@@ -432,7 +441,7 @@ export class BrepkitAdapter implements KernelAdapter {
     for (const shape of shapes) {
       const h = shape as BrepkitHandle;
       if (h.type === 'solid') {
-        const vertIds: number[] = this.bk.getSolidVertices(h.id);
+        const vertIds = toArray(this.bk.getSolidVertices(h.id));
         for (const vid of vertIds) {
           const pos: number[] = this.bk.getVertexPosition(vid);
           coords.push(pos[0]!, pos[1]!, pos[2]!);
@@ -1157,7 +1166,7 @@ export class BrepkitAdapter implements KernelAdapter {
     const deleted = new Set<number>();
 
     if (h.type === 'solid') {
-      const outputFaces: number[] = this.bk.getSolidFaces(h.id);
+      const outputFaces = toArray(this.bk.getSolidFaces(h.id));
       const outputHashes = outputFaces.map((fid) => fid % hashUpperBound);
 
       if (isTransform) {
@@ -1422,7 +1431,7 @@ export class BrepkitAdapter implements KernelAdapter {
       return { lines: new Float32Array(0), edgeGroups: [] };
     }
 
-    const edgeIds: number[] = this.bk.getSolidEdges(bkHandle.id);
+    const edgeIds = toArray(this.bk.getSolidEdges(bkHandle.id));
     const linePoints: number[] = [];
     const edgeGroups: Array<{ start: number; count: number; edgeHash: number }> = [];
 
@@ -1434,7 +1443,7 @@ export class BrepkitAdapter implements KernelAdapter {
       // tessellateEdge returns proper curve samples for NURBS edges
       const pts: number[] = this.bk.tessellateEdge(edgeId, numPoints);
       const pointCount = pts.length / 3;
-      linePoints.push(...pts);
+      for (const p of pts) linePoints.push(p);
       edgeGroups.push({ start, count: pointCount, edgeHash: edgeId });
     }
 
@@ -1472,8 +1481,7 @@ export class BrepkitAdapter implements KernelAdapter {
 
   importSTEP(data: string | ArrayBuffer): KernelShape[] {
     const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : new Uint8Array(data);
-    const ids: number[] = this.bk.importStep(bytes);
-    return ids.map(solidHandle);
+    return toArray(this.bk.importStep(bytes)).map(solidHandle);
   }
 
   importSTL(data: string | ArrayBuffer): KernelShape {
@@ -1497,8 +1505,7 @@ export class BrepkitAdapter implements KernelAdapter {
 
   importIGES(data: string | ArrayBuffer): KernelShape[] {
     const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : new Uint8Array(data);
-    const ids: number[] = this.bk.importIges(bytes);
-    return ids.map(solidHandle);
+    return toArray(this.bk.importIges(bytes)).map(solidHandle);
   }
 
   exportSTEPAssembly(parts: StepAssemblyPart[], _options?: { unit?: string }): string {
@@ -1656,9 +1663,6 @@ export class BrepkitAdapter implements KernelAdapter {
     const h = unwrap(shape);
     const bkHandle = shape as BrepkitHandle;
 
-    // Helper: WASM may return Uint32Array — convert to regular Array for .map/.flatMap
-    const toArray = (ids: number[] | Uint32Array): number[] => Array.from(ids);
-
     switch (bkHandle.type) {
       case 'compound': {
         // compound → solid: direct children
@@ -1752,7 +1756,7 @@ export class BrepkitAdapter implements KernelAdapter {
             const seen = new Set<string>();
             const results: KernelShape[] = [];
             for (const eid of edgeIds) {
-              const verts = toArray(this.bk.getEdgeVertices(eid));
+              const verts = this.bk.getEdgeVertices(eid);
               const coords = [
                 [verts[0]!, verts[1]!, verts[2]!],
                 [verts[3]!, verts[4]!, verts[5]!],
@@ -1776,7 +1780,7 @@ export class BrepkitAdapter implements KernelAdapter {
         if (type === 'vertex') {
           // getEdgeVertices returns coordinates, not arena IDs — each call to
           // makeVertex allocates a new arena entry (no stable vertex ID API yet)
-          const verts = toArray(this.bk.getEdgeVertices(h));
+          const verts = this.bk.getEdgeVertices(h);
           const v1 = this.bk.makeVertex(verts[0]!, verts[1]!, verts[2]!);
           const v2 = this.bk.makeVertex(verts[3]!, verts[4]!, verts[5]!);
           return [vertexHandle(v1), vertexHandle(v2)];
@@ -3653,7 +3657,7 @@ export class BrepkitAdapter implements KernelAdapter {
 
   /** Tessellate a solid with per-face groups for brepjs mesh format. */
   private meshSolid(solidId: number, deflection: number): KernelMeshResult {
-    const faceIds: number[] = this.bk.getSolidFaces(solidId);
+    const faceIds = toArray(this.bk.getSolidFaces(solidId));
 
     const allVertices: number[] = [];
     const allNormals: number[] = [];
@@ -3675,8 +3679,8 @@ export class BrepkitAdapter implements KernelAdapter {
 
         const triStart = allTriangles.length / 3;
 
-        allVertices.push(...positions);
-        allNormals.push(...normals);
+        for (const v of positions) allVertices.push(v);
+        for (const n of normals) allNormals.push(n);
 
         for (const idx of indices) {
           allTriangles.push(idx + vertexOffset);
