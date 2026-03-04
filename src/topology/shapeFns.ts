@@ -101,8 +101,8 @@ export function rotate<T extends AnyShape>(
     angle * DEG2RAD,
     inputFaceHashes,
     HASH_CODE_MAX,
-    [...direction],
-    [...position]
+    direction as [number, number, number],
+    position as [number, number, number]
   );
   const result = castShape(resultShape) as T;
   propagateOriginsFromEvolution(evolution, [shape], result);
@@ -118,8 +118,8 @@ export function mirror<T extends AnyShape>(
   const inputFaceHashes = collectInputFaceHashes([shape]);
   const { shape: resultShape, evolution } = getKernel().mirrorWithHistory(
     shape.wrapped,
-    [...planeOrigin],
-    [...planeNormal],
+    planeOrigin as [number, number, number],
+    planeNormal as [number, number, number],
     inputFaceHashes,
     HASH_CODE_MAX
   );
@@ -133,7 +133,7 @@ export function scale<T extends AnyShape>(shape: T, factor: number, center: Vec3
   const inputFaceHashes = collectInputFaceHashes([shape]);
   const { shape: resultShape, evolution } = getKernel().scaleWithHistory(
     shape.wrapped,
-    [...center],
+    center as [number, number, number],
     factor,
     inputFaceHashes,
     HASH_CODE_MAX
@@ -384,6 +384,7 @@ const topoCache = new WeakMap<
     wires?: Wire[];
     vertices?: Vertex[];
     faceOrigins?: Map<number, number>;
+    bounds?: Bounds3D;
   }
 >();
 
@@ -587,10 +588,12 @@ export interface Bounds3D {
   readonly zMax: number;
 }
 
-/** Get the axis-aligned bounding box of a shape. */
+/** Get the axis-aligned bounding box of a shape. Cached per shape. */
 export function getBounds(shape: AnyShape): Bounds3D {
+  const cache = getOrCreateCache(shape);
+  if (cache.bounds) return cache.bounds;
   const { min, max } = getKernel().boundingBox(shape.wrapped);
-  return {
+  const bounds: Bounds3D = {
     xMin: min[0],
     xMax: max[0],
     yMin: min[1],
@@ -598,6 +601,8 @@ export function getBounds(shape: AnyShape): Bounds3D {
     zMin: min[2],
     zMax: max[2],
   };
+  cache.bounds = bounds;
+  return bounds;
 }
 
 // ---------------------------------------------------------------------------
