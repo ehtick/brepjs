@@ -377,7 +377,7 @@ export interface BrepkitKernel {
   getFaceOuterWire(face: number): number;
 
   /** Get all wires (outer + inner) of a face. */
-  faceWires(face: number): number[];
+  getFaceWires(face: number): Uint32Array;
 
   /**
    * Get vertex positions of an edge.
@@ -499,6 +499,18 @@ export interface BrepkitKernel {
    */
   pointToSolidDistance(px: number, py: number, pz: number, solid: number): number[];
 
+  /**
+   * Minimum distance from a point to a face.
+   * Returns `[distance, closestX, closestY, closestZ]`.
+   */
+  pointToFaceDistance(px: number, py: number, pz: number, face: number): number[];
+
+  /**
+   * Minimum distance from a point to an edge.
+   * Returns `[distance, closestX, closestY, closestZ]`.
+   */
+  pointToEdgeDistance(px: number, py: number, pz: number, edge: number): number[];
+
   /** Minimum distance between two solids. */
   solidToSolidDistance(a: number, b: number): number;
 
@@ -578,6 +590,9 @@ export interface BrepkitKernel {
 
   /** Import from 3MF. Returns solid handle array. */
   import3mf(data: Uint8Array): Uint32Array;
+
+  /** Import from flat vertex/index arrays. Returns solid handle. */
+  importIndexedMesh(positions: Float64Array, indices: Uint32Array): number;
 
   /** Import from OBJ. Returns solid handle. */
   importObj(data: Uint8Array): number;

@@ -114,9 +114,16 @@ function edgeHandle(id: number): BrepkitHandle {
 function wireHandle(id: number): BrepkitHandle {
   return handle('wire', id);
 }
-// _shellHandle removed (unused)
+function shellHandle(id: number): BrepkitHandle {
+  return handle('shell', id);
+}
 function compoundHandle(id: number): BrepkitHandle {
-  return handle('compound', id);
+  const h = handle('compound', id);
+  // Clean up JS-side synthetic compound storage on delete
+  if (syntheticCompounds.has(id)) {
+    return { ...h, delete: () => syntheticCompounds.delete(id) };
+  }
+  return h;
 }
 function vertexHandle(id: number): BrepkitHandle {
   return handle('vertex', id);
@@ -301,6 +308,15 @@ const DEFAULT_DEFLECTION = 0.01;
 /** Default sphere/torus segment count (brepkit requires explicit segments). */
 const DEFAULT_SEGMENTS = 32;
 
+/**
+ * Counter for synthetic compound IDs (non-solid compounds stored JS-side).
+ * Starts high to avoid colliding with WASM arena indices.
+ */
+let syntheticCompoundCounter = 900_000;
+
+/** JS-side storage for compound children (wires, faces, edges). */
+const syntheticCompounds = new Map<number, BrepkitHandle[]>();
+
 // NotImplementedError removed (unused)
 
 // ---------------------------------------------------------------------------
@@ -347,10 +363,17 @@ export class BrepkitAdapter implements KernelAdapter {
   // ═══════════════════════════════════════════════════════════════════════
 
   fuse(shape: KernelShape, tool: KernelShape, _options?: BooleanOptions): KernelShape {
-    const result = this.bk.fuse(
-      unwrapSolidOrThrow(shape, 'fuse'),
-      unwrapSolidOrThrow(tool, 'fuse')
-    );
+    const baseId = unwrapSolidOrThrow(shape, 'fuse');
+    const toolHandle = tool as BrepkitHandle;
+    if (toolHandle.type === 'compound') {
+      const toolSolidIds: number[] = toArray(this.bk.getCompoundSolids(toolHandle.id));
+      let currentId = baseId;
+      for (const toolSolidId of toolSolidIds) {
+        currentId = this.bk.fuse(currentId, toolSolidId);
+      }
+      return solidHandle(currentId);
+    }
+    const result = this.bk.fuse(baseId, unwrapSolidOrThrow(tool, 'fuse'));
     return solidHandle(result);
   }
 
@@ -495,19 +518,25 @@ export class BrepkitAdapter implements KernelAdapter {
   buildSolidFromFaces(
     points: Array<{ x: number; y: number; z: number }>,
     faces: Array<readonly [number, number, number]>,
-    tolerance: number
+    _tolerance: number
   ): KernelShape {
-    // Build triangle faces from indexed mesh, then sew into a solid
-    const triFaces: KernelShape[] = [];
-    for (const [i0, i1, i2] of faces) {
-      const p0 = points[i0]!;
-      const p1 = points[i1]!;
-      const p2 = points[i2]!;
-      const f = this.buildTriFace([p0.x, p0.y, p0.z], [p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]);
-      if (f) triFaces.push(f);
+    // Use native importIndexedMesh for correct volume computation
+    const positions = new Float64Array(points.length * 3);
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i]!;
+      positions[i * 3] = p.x;
+      positions[i * 3 + 1] = p.y;
+      positions[i * 3 + 2] = p.z;
     }
-    if (triFaces.length === 0) throw new Error('brepkit: no valid faces to build solid from');
-    return this.sew(triFaces, tolerance);
+    const indices = new Uint32Array(faces.length * 3);
+    for (let i = 0; i < faces.length; i++) {
+      const f = faces[i]!;
+      indices[i * 3] = f[0];
+      indices[i * 3 + 1] = f[1];
+      indices[i * 3 + 2] = f[2];
+    }
+    const id = this.bk.importIndexedMesh(positions, indices);
+    return solidHandle(id);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -567,6 +596,13 @@ export class BrepkitAdapter implements KernelAdapter {
   }
 
   makeFace(wire: KernelShape, _planar?: boolean): KernelShape {
+    const h = wire as BrepkitHandle;
+    // If given an edge (e.g. a closed circle), wrap it in a wire first
+    if (h.type === 'edge') {
+      const wireId = this.bk.makeWire([h.id], true);
+      const id = this.bk.makeFaceFromWire(wireId);
+      return faceHandle(id);
+    }
     const id = this.bk.makeFaceFromWire(unwrap(wire, 'wire'));
     return faceHandle(id);
   }
@@ -880,9 +916,9 @@ export class BrepkitAdapter implements KernelAdapter {
       if (h.type === 'edge') {
         edgeIds.push(h.id);
       } else if (h.type === 'wire') {
-        // Get edges from the wire (via face edge extraction is indirect,
-        // but we can use the wire directly in many cases)
-        // For now, skip wires — only direct edges are supported
+        for (const childEdgeId of toArray(this.bk.getWireEdges(h.id))) {
+          edgeIds.push(childEdgeId);
+        }
       }
     }
     if (edgeIds.length === 0)
@@ -892,13 +928,19 @@ export class BrepkitAdapter implements KernelAdapter {
   }
 
   makeCompound(shapes: KernelShape[]): KernelShape {
-    const solidIds = shapes
-      .filter((s) => isBrepkitHandle(s) && s.type === 'solid')
-      .map((s) => unwrap(s));
-    if (solidIds.length === 0) {
-      throw new Error('brepkit: makeCompound requires at least one solid');
+    const handles = shapes.filter(isBrepkitHandle);
+    if (handles.length === 0) {
+      throw new Error('brepkit: makeCompound requires at least one shape');
     }
-    const id = this.bk.makeCompound(solidIds);
+    // If all shapes are solids, use the native WASM compound
+    const allSolids = handles.every((h) => h.type === 'solid');
+    if (allSolids) {
+      const id = this.bk.makeCompound(handles.map((h) => h.id));
+      return compoundHandle(id);
+    }
+    // Mixed types: store children JS-side
+    const id = syntheticCompoundCounter++;
+    syntheticCompounds.set(id, handles);
     return compoundHandle(id);
   }
 
@@ -918,6 +960,22 @@ export class BrepkitAdapter implements KernelAdapter {
   }
 
   solidFromShell(shell: KernelShape): KernelShape {
+    const h = shell as BrepkitHandle;
+    // brepkit's sew already produces a solid, so if we receive one, just return it.
+    if (h.type === 'solid') return shell;
+    // brepkit's sew returns solid IDs wrapped as shell handles. Try as
+    // solid first (check if it resolves), then fall back to solidFromShell.
+    if (h.type === 'shell') {
+      try {
+        // If the ID is actually a solid, just re-wrap it
+        this.bk.getSolidFaces(h.id);
+        return solidHandle(h.id);
+      } catch {
+        // Genuine shell handle — convert to solid
+      }
+      const id = this.bk.solidFromShell(h.id);
+      return solidHandle(id);
+    }
     const id = this.bk.solidFromShell(unwrap(shell, 'shell'));
     return solidHandle(id);
   }
@@ -946,6 +1004,10 @@ export class BrepkitAdapter implements KernelAdapter {
         origin: [number, number, number];
         direction: [number, number, number];
       };
+      // brepjs passes angle in radians; brepkit WASM expects degrees.
+      // Clamp to (0, 360] for full revolution safety.
+      let angleDeg = angle * (180 / Math.PI);
+      if (angleDeg > 360) angleDeg = 360;
       const id = this.bk.revolve(
         unwrap(shape, 'face'),
         origin[0],
@@ -954,7 +1016,7 @@ export class BrepkitAdapter implements KernelAdapter {
         direction[0],
         direction[1],
         direction[2],
-        angle
+        angleDeg
       );
       return solidHandle(id);
     }
@@ -967,6 +1029,11 @@ export class BrepkitAdapter implements KernelAdapter {
     direction: [number, number, number],
     angle: number
   ): KernelShape {
+    // brepjs passes angle in radians; brepkit WASM expects degrees.
+    // Clamp to (0, 360] — angles > 2π (e.g. 360 passed as raw degrees)
+    // are treated as a full revolution.
+    let angleDeg = angle * (180 / Math.PI);
+    if (angleDeg > 360) angleDeg = 360;
     const id = this.bk.revolve(
       unwrap(shape, 'face'),
       center[0],
@@ -975,7 +1042,7 @@ export class BrepkitAdapter implements KernelAdapter {
       direction[0],
       direction[1],
       direction[2],
-      angle
+      angleDeg
     );
     return solidHandle(id);
   }
@@ -1103,8 +1170,44 @@ export class BrepkitAdapter implements KernelAdapter {
     thickness: number,
     _tolerance?: number
   ): KernelShape {
-    const faceIds = faces.map((f) => unwrap(f, 'face'));
-    const id = this.bk.shell(unwrapSolidOrThrow(shape, 'shell'), thickness, faceIds);
+    const solidId = unwrapSolidOrThrow(shape, 'shell');
+    const solidFaces = toArray(this.bk.getSolidFaces(solidId));
+    const solidFaceSet = new Set(solidFaces);
+
+    // Re-resolve face IDs: if a face doesn't belong to the solid (e.g. after
+    // fillet changed face IDs), find the best matching face by normal direction.
+    const resolvedFaceIds = faces.map((f) => {
+      const fid = unwrap(f, 'face');
+      if (solidFaceSet.has(fid)) return fid;
+
+      // Face doesn't belong to this solid — match by geometry (normal)
+      try {
+        const origNormal = this.bk.getFaceNormal(fid);
+        let bestMatch = -1;
+        let bestDot = -2;
+        for (const sf of solidFaces) {
+          try {
+            const sn = this.bk.getFaceNormal(sf);
+            const dot =
+              (origNormal[0] ?? 0) * (sn[0] ?? 0) +
+              (origNormal[1] ?? 0) * (sn[1] ?? 0) +
+              (origNormal[2] ?? 0) * (sn[2] ?? 0);
+            if (dot > bestDot) {
+              bestDot = dot;
+              bestMatch = sf;
+            }
+          } catch {
+            // non-planar face, skip
+          }
+        }
+        if (bestMatch >= 0 && bestDot > 0.99) return bestMatch;
+      } catch {
+        // original face lookup failed
+      }
+      return fid; // fallback: pass original ID and let WASM validate
+    });
+
+    const id = this.bk.shell(solidId, thickness, resolvedFaceIds);
     return solidHandle(id);
   }
 
@@ -1120,8 +1223,10 @@ export class BrepkitAdapter implements KernelAdapter {
   offset(shape: KernelShape, distance: number, _tolerance?: number): KernelShape {
     const h = shape as BrepkitHandle;
     if (h.type === 'face') {
-      const id = this.bk.offsetFace(h.id, distance, 50);
-      return faceHandle(id);
+      // OCCT's BRepOffset_MakeOffset creates a solid from an offset face.
+      // Use thicken (which creates a solid from a face + distance).
+      const id = this.bk.thicken(h.id, distance);
+      return solidHandle(id);
     }
     const id = this.bk.offsetSolid(unwrapSolidOrThrow(shape, 'offset'), distance);
     return solidHandle(id);
@@ -1253,13 +1358,15 @@ export class BrepkitAdapter implements KernelAdapter {
    * Build a ShapeEvolution by comparing input face hashes to output face hashes.
    *
    * For transforms: 1:1 mapping (modified = identity, no generated/deleted).
-   * For booleans/modifiers: compare sets to detect changes.
+   * For booleans/modifiers: compare sets to detect changes, with geometric
+   * fallback when hash matching fails (brepkit always creates new face IDs).
    */
   private buildEvolution(
     resultShape: KernelShape,
     inputFaceHashes: number[],
     hashUpperBound: number,
-    isTransform: boolean
+    isTransform: boolean,
+    originalShape?: KernelShape
   ): OperationResult {
     const h = resultShape as BrepkitHandle;
     const modified = new Map<number, number[]>();
@@ -1278,31 +1385,233 @@ export class BrepkitAdapter implements KernelAdapter {
       } else {
         // Boolean/modifier: compare face hash sets
         const inputSet = new Set(inputFaceHashes);
-        const outputSet = new Set(outputHashes);
 
-        // Faces in output that match an input hash → modified
+        // Check if any output hash matches an input hash
+        let hasOverlap = false;
         for (const hash of outputHashes) {
           if (inputSet.has(hash)) {
-            modified.set(hash, [hash]);
+            hasOverlap = true;
+            break;
           }
         }
 
-        // Faces in output that don't match any input → generated (attributed to first input face)
-        const newFaces = outputHashes.filter((h) => !inputSet.has(h));
-        if (newFaces.length > 0 && inputFaceHashes.length > 0) {
-          generated.set(inputFaceHashes[0]!, newFaces);
-        }
-
-        // Faces in input that don't appear in output → deleted
-        for (const hash of inputFaceHashes) {
-          if (!outputSet.has(hash)) {
-            deleted.add(hash);
+        if (hasOverlap) {
+          // Hash-based matching (OCCT-like behavior)
+          const outputSet = new Set(outputHashes);
+          for (const hash of outputHashes) {
+            if (inputSet.has(hash)) {
+              modified.set(hash, [hash]);
+            }
+          }
+          const newFaces = outputHashes.filter((fh) => !inputSet.has(fh));
+          if (newFaces.length > 0 && inputFaceHashes.length > 0) {
+            generated.set(inputFaceHashes[0]!, newFaces);
+          }
+          for (const hash of inputFaceHashes) {
+            if (!outputSet.has(hash)) {
+              deleted.add(hash);
+            }
+          }
+        } else if (originalShape) {
+          // No hash overlap — use geometric matching (normal + centroid)
+          this.matchFacesGeometrically(
+            originalShape,
+            inputFaceHashes,
+            outputFaces,
+            hashUpperBound,
+            modified,
+            generated,
+            deleted
+          );
+        } else {
+          // No original shape available — positional fallback
+          for (let i = 0; i < inputFaceHashes.length && i < outputHashes.length; i++) {
+            modified.set(inputFaceHashes[i]!, [outputHashes[i]!]);
+          }
+          if (outputHashes.length > inputFaceHashes.length && inputFaceHashes.length > 0) {
+            generated.set(inputFaceHashes[0]!, outputHashes.slice(inputFaceHashes.length));
           }
         }
       }
     }
 
     return { shape: resultShape, evolution: { modified, generated, deleted } };
+  }
+
+  /**
+   * Chain an evolution map (modified or generated) through one step of a multi-step
+   * boolean. For each entry, each previous output hash is resolved against this
+   * step's evolution: if it was further modified, follow to the new outputs; if
+   * deleted, drop it; otherwise keep it unchanged.
+   *
+   * Mutates `map` in-place and records each resolved prevOut in `intermediateOutputs`.
+   * When `deleteOnEmpty` is provided, entries that reduce to no outputs are added to it.
+   */
+  private static chainEvolutionMap(
+    map: Map<number, number[]>,
+    stepModified: ReadonlyMap<number, readonly number[]>,
+    stepDeleted: ReadonlySet<number>,
+    intermediateOutputs: Set<number>,
+    deleteOnEmpty?: Set<number>
+  ): void {
+    for (const [origKey, prevOutputs] of map) {
+      const chainedOutputs: number[] = [];
+      for (const prevOut of prevOutputs) {
+        intermediateOutputs.add(prevOut);
+        const nextOutputs = stepModified.get(prevOut);
+        if (nextOutputs) {
+          chainedOutputs.push(...nextOutputs);
+        } else if (!stepDeleted.has(prevOut)) {
+          chainedOutputs.push(prevOut);
+        }
+      }
+      if (chainedOutputs.length > 0) {
+        map.set(origKey, chainedOutputs);
+      } else {
+        map.delete(origKey);
+        deleteOnEmpty?.add(origKey);
+      }
+    }
+  }
+
+  /** Squared Euclidean distance between two 3-component centroids. */
+  private static centroidDistSq(a: [number, number, number], b: [number, number, number]): number {
+    const dx = a[0] - b[0];
+    const dy = a[1] - b[1];
+    const dz = a[2] - b[2];
+    return dx * dx + dy * dy + dz * dz;
+  }
+
+  /** Compute face centroid as the average of tessellation vertices. */
+  private faceCentroidById(faceId: number): [number, number, number] {
+    try {
+      const pos: number[] = this.bk.tessellateFace(faceId, 1.0).positions;
+      if (pos.length < 3) return [0, 0, 0];
+      let cx = 0;
+      let cy = 0;
+      let cz = 0;
+      const nVerts = pos.length / 3;
+      for (let i = 0; i < pos.length; i += 3) {
+        cx += pos[i]!;
+        cy += pos[i + 1]!;
+        cz += pos[i + 2]!;
+      }
+      return [cx / nVerts, cy / nVerts, cz / nVerts];
+    } catch {
+      return [0, 0, 0];
+    }
+  }
+
+  /**
+   * Match input→output faces geometrically using normal dot product and centroid distance.
+   * Mirrors the algorithm in brepkit's `boolean_with_evolution`.
+   */
+  private matchFacesGeometrically(
+    originalShape: KernelShape,
+    inputFaceHashes: number[],
+    outputFaceIds: number[],
+    hashUpperBound: number,
+    modified: Map<number, number[]>,
+    generated: Map<number, number[]>,
+    deleted: Set<number>
+  ): void {
+    const orig = originalShape as BrepkitHandle;
+    if (orig.type !== 'solid') return;
+
+    const inputFaceIds = toArray(this.bk.getSolidFaces(orig.id));
+    const hashCount = Math.min(inputFaceIds.length, inputFaceHashes.length);
+
+    // Snapshot input face signatures (skip faces where normal can't be computed)
+    const inputSigs: { hash: number; normal: number[]; centroid: [number, number, number] }[] = [];
+    for (let i = 0; i < hashCount; i++) {
+      const fid = inputFaceIds[i]!;
+      try {
+        const normal = this.bk.getFaceNormal(fid);
+        const centroid = this.faceCentroidById(fid);
+        inputSigs.push({ hash: inputFaceHashes[i] ?? fid % hashUpperBound, normal, centroid });
+      } catch {
+        // Non-planar faces can't compute normal via getFaceNormal — skip
+        inputSigs.push({
+          hash: inputFaceHashes[i] ?? fid % hashUpperBound,
+          normal: [0, 0, 0],
+          centroid: this.faceCentroidById(fid),
+        });
+      }
+    }
+
+    // Snapshot output face signatures (skip faces where normal can't be computed)
+    const outputSigs: { hash: number; normal: number[]; centroid: [number, number, number] }[] = [];
+    for (const fid of outputFaceIds) {
+      try {
+        const normal = this.bk.getFaceNormal(fid);
+        const centroid = this.faceCentroidById(fid);
+        outputSigs.push({ hash: fid % hashUpperBound, normal, centroid });
+      } catch {
+        outputSigs.push({
+          hash: fid % hashUpperBound,
+          normal: [0, 0, 0],
+          centroid: this.faceCentroidById(fid),
+        });
+      }
+    }
+
+    const NORMAL_THRESHOLD = 0.707; // cos(45°)
+    const CENTROID_DIST_SQ_MAX = 100.0;
+    const matchedInputIndices = new Set<number>();
+
+    for (const out of outputSigs) {
+      let bestScore = -Infinity;
+      let bestIdx = -1;
+
+      for (let i = 0; i < inputSigs.length; i++) {
+        const inp = inputSigs[i]!;
+        const dot =
+          (out.normal[0] ?? 0) * (inp.normal[0] ?? 0) +
+          (out.normal[1] ?? 0) * (inp.normal[1] ?? 0) +
+          (out.normal[2] ?? 0) * (inp.normal[2] ?? 0);
+        if (dot < NORMAL_THRESHOLD) continue;
+
+        const distSq = BrepkitAdapter.centroidDistSq(out.centroid, inp.centroid);
+        if (distSq > CENTROID_DIST_SQ_MAX) continue;
+
+        const score = dot - distSq / CENTROID_DIST_SQ_MAX;
+        if (score > bestScore) {
+          bestScore = score;
+          bestIdx = i;
+        }
+      }
+
+      if (bestIdx >= 0) {
+        const bestInput = inputSigs[bestIdx]!;
+        const existing = modified.get(bestInput.hash) ?? [];
+        existing.push(out.hash);
+        modified.set(bestInput.hash, existing);
+        matchedInputIndices.add(bestIdx);
+      } else {
+        // Unmatched output → generated from nearest input
+        let bestDistSq = Infinity;
+        let nearestInput: (typeof inputSigs)[0] | undefined;
+        for (const inp of inputSigs) {
+          const distSq = BrepkitAdapter.centroidDistSq(out.centroid, inp.centroid);
+          if (distSq < bestDistSq) {
+            bestDistSq = distSq;
+            nearestInput = inp;
+          }
+        }
+        if (nearestInput) {
+          const existing = generated.get(nearestInput.hash) ?? [];
+          existing.push(out.hash);
+          generated.set(nearestInput.hash, existing);
+        }
+      }
+    }
+
+    // Input faces not matched → deleted
+    for (let i = 0; i < inputSigs.length; i++) {
+      if (!matchedInputIndices.has(i)) {
+        deleted.add(inputSigs[i]!.hash);
+      }
+    }
   }
 
   translateWithHistory(
@@ -1394,20 +1703,88 @@ export class BrepkitAdapter implements KernelAdapter {
     options: BooleanOptions | undefined,
     nativeFn: (a: number, b: number) => string,
     fallbackFn: (s: KernelShape, t: KernelShape, o?: BooleanOptions) => KernelShape,
-    label: string
+    _label: string
   ): OperationResult {
-    if (inputFaceHashes.length > 0) {
-      // Note: native *WithEvolution APIs do not accept BooleanOptions (e.g. fuzzyValue).
-      // Options are silently ignored when the native evolution path is used.
-      const json = nativeFn(unwrapSolidOrThrow(shape, label), unwrapSolidOrThrow(tool, label));
-      return this.parseNativeEvolution(json, hashUpperBound);
+    const sh = shape as BrepkitHandle;
+    const th = tool as BrepkitHandle;
+    if (inputFaceHashes.length > 0 && sh.type === 'solid') {
+      if (th.type === 'solid') {
+        // Native *WithEvolution APIs require solid handles and do not accept
+        // BooleanOptions (e.g. fuzzyValue). Options are silently ignored.
+        const json = nativeFn(sh.id, th.id);
+        return this.parseNativeEvolution(json, hashUpperBound);
+      }
+      if (th.type === 'compound') {
+        // Iteratively apply native evolution for each solid in the compound,
+        // chaining evolution maps so that original input face hashes map to
+        // final output face hashes (not intermediate ones).
+        const childSolidIds: number[] = toArray(this.bk.getCompoundSolids(th.id));
+        let currentShape: KernelShape = shape;
+        const combinedModified = new Map<number, number[]>();
+        const combinedGenerated = new Map<number, number[]>();
+        const combinedDeleted = new Set<number>();
+        const inputFaceHashSet = new Set(inputFaceHashes);
+        for (const childId of childSolidIds) {
+          const ch = currentShape as BrepkitHandle;
+          if (ch.type !== 'solid') break;
+          const json = nativeFn(ch.id, childId);
+          const result = this.parseNativeEvolution(json, hashUpperBound);
+          currentShape = result.shape;
+
+          // Chain evolution: update existing combined entries to follow through
+          // intermediate face hashes to final output hashes.
+          // Track which face hashes were intermediate outputs (inputs to this
+          // step) so we can skip them when merging new entries below.
+          const intermediateOutputs = new Set<number>();
+
+          // Chain combinedModified and combinedGenerated through this step.
+          // Modified entries that reduce to no outputs become deleted.
+          BrepkitAdapter.chainEvolutionMap(
+            combinedModified,
+            result.evolution.modified,
+            result.evolution.deleted,
+            intermediateOutputs,
+            combinedDeleted
+          );
+          BrepkitAdapter.chainEvolutionMap(
+            combinedGenerated,
+            result.evolution.modified,
+            result.evolution.deleted,
+            intermediateOutputs
+          );
+
+          // Add new entries from this step that aren't already chained
+          for (const [k, v] of result.evolution.modified) {
+            if (!combinedModified.has(k) && !intermediateOutputs.has(k)) {
+              combinedModified.set(k, [...v]);
+            }
+          }
+
+          for (const [k, v] of result.evolution.generated) {
+            if (!intermediateOutputs.has(k)) {
+              const existing = combinedGenerated.get(k) ?? [];
+              combinedGenerated.set(k, [...existing, ...v]);
+            }
+          }
+          for (const d of result.evolution.deleted) {
+            if (inputFaceHashSet.has(d)) {
+              combinedDeleted.add(d);
+            }
+          }
+        }
+        return {
+          shape: currentShape,
+          evolution: {
+            modified: combinedModified,
+            generated: combinedGenerated,
+            deleted: combinedDeleted,
+          },
+        };
+      }
     }
-    return this.buildEvolution(
-      fallbackFn(shape, tool, options),
-      inputFaceHashes,
-      hashUpperBound,
-      false
-    );
+    // Fallback: non-solid shapes or no face hashes
+    const fallbackResult = fallbackFn(shape, tool, options);
+    return this.buildEvolution(fallbackResult, inputFaceHashes, hashUpperBound, false, shape);
   }
 
   fuseWithHistory(
@@ -1478,7 +1855,8 @@ export class BrepkitAdapter implements KernelAdapter {
       this.fillet(shape, edges, radius),
       inputFaceHashes,
       hashUpperBound,
-      false
+      false,
+      shape
     );
   }
 
@@ -1493,7 +1871,8 @@ export class BrepkitAdapter implements KernelAdapter {
       this.chamfer(shape, edges, distance),
       inputFaceHashes,
       hashUpperBound,
-      false
+      false,
+      shape
     );
   }
 
@@ -1509,7 +1888,8 @@ export class BrepkitAdapter implements KernelAdapter {
       this.shell(shape, faces, thickness, tolerance),
       inputFaceHashes,
       hashUpperBound,
-      false
+      false,
+      shape
     );
   }
 
@@ -1523,7 +1903,8 @@ export class BrepkitAdapter implements KernelAdapter {
       this.thicken(shape, thickness),
       inputFaceHashes,
       hashUpperBound,
-      false
+      false,
+      shape
     );
   }
 
@@ -1538,7 +1919,8 @@ export class BrepkitAdapter implements KernelAdapter {
       this.offset(shape, distance, tolerance),
       inputFaceHashes,
       hashUpperBound,
-      false
+      false,
+      shape
     );
   }
 
@@ -1818,12 +2200,26 @@ export class BrepkitAdapter implements KernelAdapter {
 
     switch (bkHandle.type) {
       case 'compound': {
-        // compound → solid: direct children
+        // Check for JS-side synthetic compound first
+        const children = syntheticCompounds.get(h);
+        if (children) {
+          // Return children matching the requested type, or recurse
+          const results: KernelShape[] = [];
+          for (const child of children) {
+            if (child.type === type) {
+              results.push(child);
+            } else {
+              results.push(...this.iterShapes(child, type));
+            }
+          }
+          return results;
+        }
+        // Native compound → solid: direct children
         if (type === 'solid') {
           return toArray(this.bk.getCompoundSolids(h)).map(solidHandle);
         }
-        // compound → face/edge/vertex: recursive via solids
-        if (type === 'face' || type === 'edge' || type === 'vertex') {
+        // compound → face/edge/vertex/wire: recursive via solids
+        if (type === 'face' || type === 'edge' || type === 'vertex' || type === 'wire') {
           const solids = toArray(this.bk.getCompoundSolids(h)).map(solidHandle);
           return solids.flatMap((s) => this.iterShapes(s, type));
         }
@@ -1839,8 +2235,8 @@ export class BrepkitAdapter implements KernelAdapter {
           case 'vertex':
             return toArray(this.bk.getSolidVertices(h)).map(vertexHandle);
           case 'wire':
-            return toArray(this.bk.getSolidFaces(h)).map((faceId: number) =>
-              wireHandle(this.bk.getFaceOuterWire(faceId))
+            return toArray(this.bk.getSolidFaces(h)).flatMap((faceId: number) =>
+              toArray(this.bk.getFaceWires(faceId)).map(wireHandle)
             );
           default:
             return [];
@@ -1880,7 +2276,7 @@ export class BrepkitAdapter implements KernelAdapter {
           return toArray(this.bk.getFaceVertices(h)).map(vertexHandle);
         }
         if (type === 'wire') {
-          return [wireHandle(this.bk.getFaceOuterWire(h))];
+          return toArray(this.bk.getFaceWires(h)).map(wireHandle);
         }
         return [];
       }
@@ -2057,13 +2453,44 @@ export class BrepkitAdapter implements KernelAdapter {
   }
 
   curveParameters(shape: KernelShape): [number, number] {
-    const edgeId = this.unwrapEdgeOrFirstOfWire(shape);
+    const h = shape as BrepkitHandle;
+    if (h.type === 'wire') {
+      // For wires, compose a cumulative parameter range over all edges
+      const edgeIds: number[] = toArray(this.bk.getWireEdges(h.id));
+      if (edgeIds.length === 0) return [0, 0];
+      let total = 0;
+      for (const eid of edgeIds) {
+        const p: number[] = this.bk.getEdgeCurveParameters(eid);
+        total += p[1]! - p[0]!;
+      }
+      return [0, total];
+    }
+    const edgeId = unwrap(shape, 'edge');
     const params: number[] = this.bk.getEdgeCurveParameters(edgeId);
     return [params[0]!, params[1]!];
   }
 
   curvePointAtParam(shape: KernelShape, param: number): [number, number, number] {
-    const edgeId = this.unwrapEdgeOrFirstOfWire(shape);
+    const h = shape as BrepkitHandle;
+    if (h.type === 'wire') {
+      // Walk edges to find the right one for the composite parameter
+      const edgeIds: number[] = toArray(this.bk.getWireEdges(h.id));
+      let cumulative = 0;
+      for (const eid of edgeIds) {
+        const p: number[] = this.bk.getEdgeCurveParameters(eid);
+        const span = p[1]! - p[0]!;
+        if (param <= cumulative + span || eid === edgeIds[edgeIds.length - 1]) {
+          const localParam = p[0]! + (param - cumulative);
+          const pt: number[] = this.bk.evaluateEdgeCurve(eid, Math.min(localParam, p[1]!));
+          return [pt[0]!, pt[1]!, pt[2]!];
+        }
+        cumulative += span;
+      }
+      // Fallback: evaluate first edge at param
+      const pt: number[] = this.bk.evaluateEdgeCurve(edgeIds[0]!, param);
+      return [pt[0]!, pt[1]!, pt[2]!];
+    }
+    const edgeId = unwrap(shape, 'edge');
     const p: number[] = this.bk.evaluateEdgeCurve(edgeId, param);
     return [p[0]!, p[1]!, p[2]!];
   }
@@ -2186,17 +2613,34 @@ export class BrepkitAdapter implements KernelAdapter {
   }
 
   sew(shapes: KernelShape[], tolerance?: number): KernelShape {
-    const faceIds = shapes.map((s) => unwrap(s, 'face'));
+    // Extract face IDs, expanding solids/shells to their constituent faces
+    const faceIds: number[] = [];
+    for (const s of shapes) {
+      const h = s as BrepkitHandle;
+      if (h.type === 'face') {
+        faceIds.push(h.id);
+      } else if (h.type === 'solid') {
+        for (const fid of toArray(this.bk.getSolidFaces(h.id))) {
+          faceIds.push(fid);
+        }
+      } else if (h.type === 'shell') {
+        for (const fid of toArray(this.bk.getShellFaces(h.id))) {
+          faceIds.push(fid);
+        }
+      }
+    }
     const tol = tolerance ?? 1e-7;
-    // Try native weldShellsAndFaces first (better tolerance-based welding)
+    // brepkit's sew produces a solid directly. Return as shell handle so
+    // callers expecting shell (weldShellsAndFaces) work. The solidFromShell
+    // adapter method handles shell handles that are actually solid IDs.
     try {
       const id = this.bk.weldShellsAndFaces(faceIds, tol);
-      return solidHandle(id);
+      return shellHandle(id);
     } catch (e: unknown) {
       console.warn('brepkit: weldShellsAndFaces failed, falling back to sewFaces:', e);
     }
     const id = this.bk.sewFaces(faceIds, tol);
-    return solidHandle(id);
+    return shellHandle(id);
   }
 
   healSolid(shape: KernelShape): KernelShape | null {
@@ -2289,6 +2733,28 @@ export class BrepkitAdapter implements KernelAdapter {
     if (h1.type === 'vertex' && h2.type === 'solid') {
       const pos = this.bk.getVertexPosition(h1.id);
       const result: number[] = this.bk.pointToSolidDistance(pos[0]!, pos[1]!, pos[2]!, h2.id);
+      return {
+        value: result[0]!,
+        point1: [pos[0]!, pos[1]!, pos[2]!],
+        point2: [result[1]!, result[2]!, result[3]!],
+      };
+    }
+
+    // Point-to-face distance
+    if (h1.type === 'vertex' && h2.type === 'face') {
+      const pos = this.bk.getVertexPosition(h1.id);
+      const result: number[] = this.bk.pointToFaceDistance(pos[0]!, pos[1]!, pos[2]!, h2.id);
+      return {
+        value: result[0]!,
+        point1: [pos[0]!, pos[1]!, pos[2]!],
+        point2: [result[1]!, result[2]!, result[3]!],
+      };
+    }
+
+    // Point-to-edge distance
+    if (h1.type === 'vertex' && h2.type === 'edge') {
+      const pos = this.bk.getVertexPosition(h1.id);
+      const result: number[] = this.bk.pointToEdgeDistance(pos[0]!, pos[1]!, pos[2]!, h2.id);
       return {
         value: result[0]!,
         point1: [pos[0]!, pos[1]!, pos[2]!],
@@ -2507,6 +2973,14 @@ export class BrepkitAdapter implements KernelAdapter {
       if (options?.ruled !== undefined) opts['ruled'] = options.ruled;
       if (options?.solid !== undefined) opts['solid'] = options.solid;
       if (options?.tolerance !== undefined) opts['tolerance'] = options.tolerance;
+      if (options?.startVertex) {
+        const pos = this.bk.getVertexPosition(unwrap(options.startVertex, 'vertex'));
+        opts['startPoint'] = [pos[0], pos[1], pos[2]];
+      }
+      if (options?.endVertex) {
+        const pos = this.bk.getVertexPosition(unwrap(options.endVertex, 'vertex'));
+        opts['endPoint'] = [pos[0], pos[1], pos[2]];
+      }
       const id = this.bk.loftWithOptions(faceIds, JSON.stringify(opts));
       return solidHandle(id);
     } catch {
@@ -2715,15 +3189,9 @@ export class BrepkitAdapter implements KernelAdapter {
 
   sewAndSolidify(faces: KernelShape[], tolerance: number): KernelShape {
     const faceIds = faces.map((s) => unwrap(s, 'face'));
-    const shellOrSolid = this.bk.sewFaces(faceIds, tolerance);
-    // sewFaces may return a shell — try to solidify it
-    try {
-      const solidId = this.bk.solidFromShell(shellOrSolid);
-      return solidHandle(solidId);
-    } catch {
-      // solidFromShell failed — return as solid (sewFaces already returns solid handle)
-      return solidHandle(shellOrSolid);
-    }
+    // sewFaces returns a solid handle directly — no need for solidFromShell
+    const solidId = this.bk.sewFaces(faceIds, tolerance);
+    return solidHandle(solidId);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -3434,24 +3902,53 @@ export class BrepkitAdapter implements KernelAdapter {
 
   // --- 2D intersection & distance ---
   intersectCurves2d(
-    _c1: Curve2dHandle,
-    _c2: Curve2dHandle,
-    _tolerance: number
+    c1: Curve2dHandle,
+    c2: Curve2dHandle,
+    tolerance: number
   ): { points: [number, number][]; segments: Curve2dHandle[] } {
-    // Full curve-curve intersection requires dedicated algorithm — return empty for now
-    return { points: [], segments: [] };
+    const result = bk2d.intersectCurves2dFn(this.c2d(c1), this.c2d(c2), tolerance);
+    // Wrap segment Curve2dObj as Curve2dHandle (add no-op delete for OCCT compat)
+    const segments: Curve2dHandle[] = result.segments.map((s) =>
+      Object.assign(s, {
+        delete() {
+          /* no-op */
+        },
+      })
+    );
+    return { points: result.points, segments };
   }
   projectPointOnCurve2d(
     curve: Curve2dHandle,
     x: number,
     y: number
   ): { param: number; distance: number } | null {
-    // Brute-force sampling
     const c = this.c2d(curve);
     const bounds = bk2d.curveBounds(c);
-    let bestT = bounds.first,
-      bestDist = Infinity;
-    const N = 100;
+
+    // Analytic projection for untrimmed lines
+    if (c.__bk2d === 'line') {
+      const dx = x - c.ox;
+      const dy = y - c.oy;
+      const t = Math.max(bounds.first, Math.min(bounds.last, dx * c.dx + dy * c.dy));
+      const [px, py] = bk2d.evaluateCurve2d(c, t);
+      return { param: t, distance: Math.sqrt((px - x) ** 2 + (py - y) ** 2) };
+    }
+
+    // Analytic projection for untrimmed circles
+    if (c.__bk2d === 'circle') {
+      const angle = Math.atan2(y - c.cy, x - c.cx);
+      let t = c.sense ? angle : -angle;
+      while (t < 0) t += 2 * Math.PI;
+      while (t > 2 * Math.PI) t -= 2 * Math.PI;
+      const [px, py] = bk2d.evaluateCurve2d(c, t);
+      return { param: t, distance: Math.sqrt((px - x) ** 2 + (py - y) ** 2) };
+    }
+
+    // General: brute-force + Newton refinement (handles trimmed, ellipse, bezier, bspline)
+    if (!isFinite(bounds.first) || !isFinite(bounds.last)) return null;
+    let bestT = bounds.first;
+    let bestDist = Infinity;
+    const N = 200;
     const dt = (bounds.last - bounds.first) / N;
     for (let i = 0; i <= N; i++) {
       const t = bounds.first + i * dt;
@@ -3462,7 +3959,21 @@ export class BrepkitAdapter implements KernelAdapter {
         bestT = t;
       }
     }
-    return { param: bestT, distance: Math.sqrt(bestDist) };
+    // Newton refinement: minimize f(t) = |C(t) - P|^2
+    // f'(t) = 2 * dot(C(t) - P, C'(t))
+    for (let iter = 0; iter < 10; iter++) {
+      const [px, py] = bk2d.evaluateCurve2d(c, bestT);
+      const [tx, ty] = bk2d.tangentCurve2d(c, bestT);
+      const dot = (px - x) * tx + (py - y) * ty;
+      const denom = tx * tx + ty * ty;
+      if (denom < 1e-20) break;
+      const step = dot / denom;
+      const newT = Math.max(bounds.first, Math.min(bounds.last, bestT - step));
+      if (Math.abs(newT - bestT) < 1e-14) break;
+      bestT = newT;
+    }
+    const [fx, fy] = bk2d.evaluateCurve2d(c, bestT);
+    return { param: bestT, distance: Math.sqrt((fx - x) ** 2 + (fy - y) ** 2) };
   }
   distanceBetweenCurves2d(
     c1: Curve2dHandle,
