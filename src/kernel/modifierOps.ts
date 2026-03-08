@@ -27,11 +27,12 @@ export function fillet(
   const builder = new oc.BRepFilletAPI_MakeFillet(shape, oc.ChFi3d_FilletShape.ChFi3d_Rational);
   for (const edge of edges) {
     const r = typeof radius === 'function' ? radius(edge) : radius;
+    const downcast = oc.TopoDS.Edge_1(edge);
     if (typeof r === 'number') {
-      if (r > 0) builder.Add_2(r, edge);
+      if (r > 0) builder.Add_2(r, downcast);
     } else {
       const [r1, r2] = r;
-      if (r1 > 0 && r2 > 0) builder.Add_3(r1, r2, edge);
+      if (r1 > 0 && r2 > 0) builder.Add_3(r1, r2, downcast);
     }
   }
   const result = builder.Shape();
@@ -93,14 +94,15 @@ export function chamfer(
 
   for (const edge of edges) {
     const d = typeof distance === 'function' ? distance(edge) : distance;
+    const downcast = oc.TopoDS.Edge_1(edge);
     if (typeof d === 'number') {
-      if (d > 0) builder.Add_2(d, edge);
+      if (d > 0) builder.Add_2(d, downcast);
     } else {
       const [d1, d2] = d;
       if (d1 > 0 && d2 > 0) {
         const face = findContainingFace(edge);
         if (face) {
-          builder.Add_3(d1, d2, oc.TopoDS.Edge_1(edge), face);
+          builder.Add_3(d1, d2, downcast, face);
         }
       }
     }
@@ -206,7 +208,6 @@ export function chamferDistAngle(
   for (const edge of edges) {
     const containingFace = edgeFaceMap.get(edge.HashCode(2147483647)) ?? null;
     if (containingFace && distance > 0) {
-      // Edge must also be downcast to TopoDS_Edge for the AddDA binding
       builder.AddDA(distance, angleRad, oc.TopoDS.Edge_1(edge), containingFace);
     }
   }
