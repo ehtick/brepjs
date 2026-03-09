@@ -147,6 +147,41 @@ const result = withScope((scope) => {
 });
 ```
 
+## Type Safety: Validity Types
+
+```typescript
+import { line, wire, wireLoop, face, extrude, closedWire, isClosedWire, unwrap } from 'brepjs';
+
+// wireLoop: assemble edges + verify closure in one step → ClosedWire
+const cw = unwrap(
+  wireLoop([
+    line([0, 0, 0], [10, 0, 0]),
+    line([10, 0, 0], [10, 10, 0]),
+    line([10, 10, 0], [0, 10, 0]),
+    line([0, 10, 0], [0, 0, 0]),
+  ])
+);
+
+// face() requires ClosedWire, returns OrientedFace
+const f = unwrap(face(cw));
+
+// extrude() requires OrientedFace, returns Solid
+const solid = unwrap(extrude(f, 10));
+
+// Smart constructors for runtime validation
+const result = closedWire(someWire); // ValidityResult<ClosedWire>
+if (result.valid) {
+  use(result.shape); // ClosedWire
+} else {
+  console.error(result.reason); // "Wire is not closed: ..."
+}
+
+// Type guards for narrowing
+if (isClosedWire(someWire)) {
+  const f = unwrap(face(someWire)); // ClosedWire accepted
+}
+```
+
 ## Error Handling
 
 ```typescript
@@ -184,4 +219,4 @@ if (isOk(result)) {
 - **[Which API?](./which-api.md)** -- Detailed API comparison
 - **[Memory Management](./memory-management.md)** -- Full patterns for WASM cleanup
 - **[Error Reference](./errors.md)** -- All error codes and recovery
-- **[Examples](../examples/)** -- 9 runnable examples
+- **[Examples](../examples/)** -- 5 runnable examples

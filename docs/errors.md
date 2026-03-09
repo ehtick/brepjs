@@ -14,7 +14,7 @@ interface BrepError {
 }
 
 type BrepErrorKind =
-  | 'OCCT_OPERATION'
+  | 'KERNEL_OPERATION'
   | 'VALIDATION'
   | 'TYPE_CAST'
   | 'SKETCHER_STATE'
@@ -53,7 +53,7 @@ const value = unwrap(result);
 
 ## Error Codes by Kind
 
-### OCCT_OPERATION
+### KERNEL_OPERATION
 
 Errors from kernel geometry operations.
 
@@ -77,6 +77,8 @@ Errors from kernel geometry operations.
 | `HEAL_RESULT_NOT_SOLID` | Healed result is not a solid       | Check input is a solid           |
 | `HEAL_RESULT_NOT_FACE`  | Healed result is not a face        | Check input is a face            |
 | `HEAL_RESULT_NOT_WIRE`  | Healed result is not a wire        | Check input is a wire            |
+| `HEAL_SOLID_INCOMPLETE` | Healed result still invalid        | Shape may be too damaged to fix  |
+| `HEAL_NO_EFFECT`        | Healing had no effect on shape     | Shape was invalid, healer failed |
 
 ### VALIDATION
 
@@ -107,6 +109,7 @@ Input validation errors.
 | `PATTERN_ZERO_DIRECTION`   | Pattern direction cannot be zero  | Provide non-zero direction vector       |
 | `PATTERN_ZERO_AXIS`        | Pattern axis cannot be zero       | Provide non-zero axis vector            |
 | `CAMERA_ZERO_DIRECTION`    | Camera direction is zero-length   | Provide non-zero direction vector       |
+| `WIRE_NOT_CLOSED`          | Wire does not form a closed loop  | Ensure start and end points coincide    |
 
 ### TYPE_CAST
 
