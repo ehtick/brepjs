@@ -352,10 +352,10 @@ function createWrapped3D<T extends Shape3D>(val: T): Wrapped3D<T> {
       wrap3D(unwrapOrThrow(fuseAllFn([val, ...tools.map(resolve)], opts)) as unknown as T),
     cutAll: (tools, opts) => wrap3D(unwrapOrThrow(cutAllFn(val, tools, opts)) as unknown as T),
 
-    // Boolean variants
-    section: (plane, opts) => wrapAny(unwrapOrThrow(sectionFn(val, plane, opts))),
-    split: (tools) => wrapAny(unwrapOrThrow(splitFn(val, tools))),
-    slice: (planes, opts) => unwrapOrThrow(sliceFn(val, planes, opts)),
+    // Boolean variants — wrappers are always 3D context, safe to narrow
+    section: (plane, opts) => wrapAny(unwrapOrThrow(sectionFn(val, plane, opts)) as AnyShape),
+    split: (tools) => wrapAny(unwrapOrThrow(splitFn(val, tools)) as AnyShape),
+    slice: (planes, opts) => unwrapOrThrow(sliceFn(val, planes, opts)) as AnyShape[],
 
     // Modifiers (overloaded — detect by argument types)
     fillet(
@@ -495,10 +495,10 @@ export function shape(
 
   // Branded shape types
   if (s && typeof s === 'object' && 'wrapped' in s) {
-    if (isFace(s)) return createWrappedFace(s);
+    if (isFace(s)) return createWrappedFace(s as Face);
     if (isShape3D(s)) return createWrapped3D(s);
-    if (isEdge(s) || isWire(s)) return createWrappedCurve(s);
-    return createWrappedBase(s);
+    if (isEdge(s) || isWire(s)) return createWrappedCurve(s as Edge | Wire);
+    return createWrappedBase(s as AnyShape);
   }
 
   throw new Error('shape() requires a Sketch or branded shape type');

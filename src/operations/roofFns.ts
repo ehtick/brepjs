@@ -5,7 +5,7 @@
 
 import { getKernel } from '../kernel/index.js';
 import type { KernelShape } from '../kernel/types.js';
-import type { Wire, Solid } from '../core/shapeTypes.js';
+import type { Dimension, Wire, Solid } from '../core/shapeTypes.js';
 import { createSolid } from '../core/shapeTypes.js';
 import { type Result, ok, err } from '../core/result.js';
 import { kernelError, BrepErrorCode } from '../core/errors.js';
@@ -27,7 +27,7 @@ export interface RoofOptions {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function extractPolygon(w: Wire): SkPoint2D[] {
+function extractPolygon(w: Wire<Dimension>): SkPoint2D[] {
   const edges = getEdges(w);
   const pts = edges.map((e) => {
     const pt = curveStartPoint(e);
@@ -156,7 +156,7 @@ function earClipTriangulate(poly: SkPoint2D[]): Array<[number, number, number]> 
  * @param options - Optional angle (degrees) for the roof slope
  * @returns A Result containing the roof Solid, or an error
  */
-export function roof(w: Wire, options?: RoofOptions): Result<Solid> {
+export function roof(w: Wire<Dimension>, options?: RoofOptions): Result<Solid> {
   const angle = (options?.angle ?? 45) * (Math.PI / 180);
   const tanAngle = Math.tan(angle);
 
