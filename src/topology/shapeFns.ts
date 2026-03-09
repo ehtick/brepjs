@@ -423,7 +423,12 @@ export function getEdges<D extends Dimension>(shape: AnyShape<D>): Edge<D>[] {
   return edges;
 }
 
-/** Get all faces of a shape as branded Face handles. Results are cached per shape. */
+/**
+ * Get all faces of a shape. Results are cached per shape.
+ *
+ * Returns `Face[]` — use `isOrientedFace()` or `orientedFace()` to narrow
+ * individual faces to `OrientedFace` when the orientation guarantee is needed.
+ */
 export function getFaces<D extends Dimension>(shape: AnyShape<D>): Face<D>[] {
   const cache = getOrCreateCache(shape);
   if (cache.faces) return cache.faces as Face<D>[];
