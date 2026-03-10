@@ -9,8 +9,8 @@
     "STEP",
     "STL"
   ],
-  "author": "Andy Mai",
-  "license": "Apache-2.0",
+  "author": "Andy Aragon",
+  "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/andymai/brepjs"
