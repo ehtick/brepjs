@@ -1,6 +1,33 @@
 # Getting Started
 
-This guide walks you through creating your first 3D part with brepjs — from installation to exported STEP file.
+Build your first 3D part — from `npm install` to exported STEP file.
+
+## 60 Seconds to Your First Shape
+
+```typescript
+import { box, measureVolume, exportSTEP, unwrap } from 'brepjs/quick';
+
+// Create a box — no init needed with brepjs/quick
+const b = box(30, 20, 10);
+
+// Measure it
+console.log('Volume:', measureVolume(b).toFixed(1), 'mm³');
+
+// Export to STEP (industry-standard CAD format)
+const step = unwrap(exportSTEP(b));
+console.log('STEP file:', step.size, 'bytes');
+```
+
+`brepjs/quick` auto-initializes the WASM kernel via top-level await.
+
+**What just happened?**
+
+1. `brepjs/quick` loaded and initialized the WASM geometry kernel
+2. `box(30, 20, 10)` created a B-Rep solid (width, depth, height)
+3. `measureVolume` computed the exact volume (6000 mm³)
+4. `exportSTEP` serialized the shape to an industry-standard CAD file
+
+---
 
 ## Prerequisites
 
@@ -15,21 +42,35 @@ npm install brepjs brepjs-opencascade
 
 `brepjs` is the API layer. `brepjs-opencascade` provides the default WASM geometry kernel.
 
-## Step 2: Import from `brepjs/quick`
+## Step 2: Initialize
 
-The easiest way to start is with `brepjs/quick`, which automatically initializes the WASM kernel for you:
+Two ways to start — pick whichever fits your setup:
+
+**Option A: `brepjs/quick` (zero config)**
 
 ```typescript
 import { box, cylinder, shape } from 'brepjs/quick';
 
-// The kernel is auto-initialized via top-level await
-// You can start creating shapes immediately
+const b = box(30, 20, 10); // just works — WASM init happens via top-level await
+```
+
+Best for: scripts, quick prototypes, any ESM environment that supports top-level await.
+
+**Option B: Standard import (explicit init)**
+
+```typescript
+import opencascade from 'brepjs-opencascade';
+import { initFromOC, box, cylinder, shape } from 'brepjs';
+
+const oc = await opencascade();
+initFromOC(oc); // call once, then all brepjs functions are ready
+
 const b = box(30, 20, 10);
 ```
 
-That's it — no initialization ceremony required. The `brepjs/quick` entry point handles WASM setup automatically using top-level await.
+Best for: apps that need a loading indicator, explicit error handling, lazy initialization, or environments without top-level await (older bundlers, some test frameworks).
 
-> **Note:** If you need manual control over initialization (for example, in environments without top-level await support), see the [Advanced: Manual Initialization](#advanced-manual-initialization) section below.
+Both options expose the same API — the only difference is who calls `initFromOC()`. All examples below work with either import path.
 
 ## Step 3: Create shapes with primitives
 
@@ -39,11 +80,11 @@ const cyl = cylinder(5, 20); // radius, height
 const sph = sphere(8); // radius
 ```
 
-`box`, `cylinder`, and `sphere` return `ValidSolid` — a branded type representing a watertight 3D shape that passes BRepCheck validation. All primitives are available from `brepjs/quick`.
+`box`, `cylinder`, and `sphere` return `ValidSolid` — a branded type representing a watertight 3D shape that passes BRepCheck validation. All primitives are available from both `brepjs/quick` and `brepjs`.
 
 ## Step 4: Combine shapes with the fluent wrapper
 
-The easiest way to work with brepjs is the `shape()` wrapper. It provides a fluent, chainable API that automatically handles errors:
+The `shape()` wrapper provides a fluent, chainable API:
 
 ```typescript
 import { shape } from 'brepjs';
@@ -52,7 +93,7 @@ import { shape } from 'brepjs';
 const withHole = shape(b).cut(cyl).val;
 ```
 
-The wrapper returns a new wrapped shape after each operation, so you can chain multiple operations together:
+Each operation returns a new wrapped shape, so you can chain freely:
 
 ```typescript
 const part = shape(box(30, 20, 10))
@@ -61,7 +102,7 @@ const part = shape(box(30, 20, 10))
   .translate([10, 0, 0]).val; // .val extracts the final shape
 ```
 
-The wrapper automatically unwraps `Result` types and throws a `BrepWrapperError` if an operation fails. For production code where you need explicit error handling, use the functional API:
+The wrapper automatically unwraps `Result` types and throws `BrepWrapperError` on failure. For explicit error handling at each step, use the functional API:
 
 ```typescript
 import { cut, isOk } from 'brepjs';
@@ -84,7 +125,7 @@ The three boolean operations are:
 
 ## Step 5: Transform
 
-Transforms return new shapes (nothing is mutated). The wrapper makes chaining transforms easy:
+Transforms return new shapes — nothing is mutated:
 
 ```typescript
 // Wrapper style - chain operations fluently
@@ -97,7 +138,7 @@ const moved = shape(withHole)
 const positioned = shape(withHole).moveX(100).rotateZ(45).val;
 ```
 
-You can also use the functional API if you prefer:
+Functional API alternative:
 
 ```typescript
 import { translate, rotate, scale } from 'brepjs';
@@ -123,7 +164,7 @@ Measurement functions return plain numbers — they never fail on valid shapes.
 
 ## Step 7: Export
 
-Export functions return `Result<Blob>`. Use the functional API for exports:
+Export functions return `Result<Blob>`:
 
 ```typescript
 import { exportSTEP, unwrap } from 'brepjs';
@@ -193,13 +234,11 @@ console.log('Vertices:', bufferData.position.length / 3);
 
 Vite handles WASM loading automatically. For other bundlers, you may need to configure WASM file serving — see [Compatibility](./compatibility.md) for details.
 
-> **Note:** For manual initialization control in browsers (useful for loading indicators or error handling), see [Advanced: Manual Initialization](#advanced-manual-initialization) below.
-
 Try the [interactive playground](https://brepjs.vercel.app) for live experimentation.
 
 ## The 2D → 3D workflow
 
-For more complex profiles, sketch in 2D first, then extrude to 3D. You can use the wrapper's `extrude()` method on faces:
+For more complex profiles, sketch in 2D first, then extrude to 3D:
 
 ```typescript
 import { drawRectangle, drawCircle, drawingCut, drawingToSketchOnPlane, shape } from 'brepjs';
@@ -222,7 +261,7 @@ const solid = sketchExtrude(sketch, 20);
 
 ## Edge refinement: fillets and chamfers
 
-Round or bevel edges on a solid. The wrapper makes this especially clean with finder callbacks:
+Round or bevel edges on a solid using finder callbacks:
 
 ```typescript
 // Fillet all edges with 2mm radius
@@ -247,9 +286,9 @@ const beveled = unwrap(chamfer(part, vertEdges, 1));
 
 ## Error handling patterns
 
-brepjs uses a `Result<T, BrepError>` type for all fallible operations.
+brepjs uses a `Result<T, BrepError>` type for all fallible operations. Two styles:
 
-**Wrapper style** — throws `BrepWrapperError` on failure:
+**Wrapper style** — throws on failure:
 
 ```typescript
 import { shape, box, cylinder, BrepWrapperError } from 'brepjs';
@@ -258,7 +297,6 @@ try {
   const part = shape(box(10, 10, 10))
     .cut(cylinder(5, 15))
     .fillet(2).val;
-  render(part);
 } catch (error) {
   if (error instanceof BrepWrapperError) {
     console.error(error.code, error.message);
@@ -266,48 +304,28 @@ try {
 }
 ```
 
-**Functional API** — returns `Result<T>` for explicit error handling:
+**Functional API** — explicit `Result` handling:
 
 ```typescript
-import { cut, isOk, unwrap, match } from 'brepjs';
+import { cut, isOk } from 'brepjs';
 
 const result = cut(b, cyl);
-
-// Pattern 1: Quick scripts — unwrap (throws on error)
-const solid = unwrap(result);
-
-// Pattern 2: Check and branch
 if (isOk(result)) {
   doSomething(result.value);
 } else {
   console.error(result.error.code, result.error.message);
 }
-
-// Pattern 3: Pattern matching
-match(result, {
-  ok: (solid) => render(solid),
-  err: (error) => showError(error.message),
-});
 ```
 
-**Which to use?** The wrapper is more concise for most use cases. Use the functional API when you need fine-grained control over error handling at each step.
-
-See [errors.md](./errors.md) for the full error code reference.
+The wrapper is more concise for most use cases. Use the functional API when you need fine-grained control at each step. See [Error Reference](./errors.md) for all error codes and recovery patterns.
 
 ## Type safety: validity types
 
-brepjs uses the TypeScript type system to prevent common modeling errors at compile time. Key operations require **validity-branded** types:
-
-- **`ClosedWire`** — a wire that forms a closed loop. Required by `face()`.
-- **`OrientedFace`** — a face with consistent normal orientation. Required by `extrude()` and `revolve()`.
-- **`ValidSolid`** — a solid that passes BRepCheck validation. Returned by `box()`, `cylinder()`, `sphere()`, etc.
-
-The easiest way to get a `ClosedWire` is with `wireLoop()`:
+brepjs uses phantom types to catch modeling errors at compile time. The key chain: `wireLoop → face → extrude`.
 
 ```typescript
 import { line, wireLoop, face, extrude, unwrap } from 'brepjs/quick';
 
-// wireLoop assembles edges and verifies closure → Result<ClosedWire>
 const cw = unwrap(
   wireLoop([
     line([0, 0, 0], [10, 0, 0]),
@@ -315,58 +333,19 @@ const cw = unwrap(
     line([10, 10, 0], [0, 10, 0]),
     line([0, 10, 0], [0, 0, 0]),
   ])
-);
+); // ClosedWire
 
-const f = unwrap(face(cw)); // face() requires ClosedWire, returns OrientedFace
-const s = unwrap(extrude(f, 10)); // extrude() requires OrientedFace, returns Solid
+const f = unwrap(face(cw)); // face() requires ClosedWire → OrientedFace
+const s = unwrap(extrude(f, 10)); // extrude() requires OrientedFace → Solid
 ```
 
-For runtime validation of existing shapes, use **smart constructors**:
-
-```typescript
-import { closedWire, orientedFace } from 'brepjs';
-
-const result = closedWire(someWire);
-if (result.valid) {
-  // result.shape is ClosedWire — pass to face()
-} else {
-  console.error(result.reason); // explains why validation failed
-}
-```
-
-These types are all subtypes of their base types — a `ClosedWire` works anywhere a `Wire` is accepted, and a `ValidSolid` works anywhere a `Solid` is accepted. See [B-Rep Concepts](./concepts.md#validity-types) for details.
+See [B-Rep Concepts](./concepts.md#validity-types) for how validity types work — `ClosedWire`, `OrientedFace`, `ValidSolid`, smart constructors, and type guards.
 
 ---
 
-## Advanced: Manual Initialization
+## Advanced: Browser Loading Indicator
 
-Most users should use `brepjs/quick` for automatic initialization. However, if you need manual control over the WASM loading process (for example, to show a loading indicator, handle errors explicitly, or work in environments without top-level await support), you can initialize manually:
-
-```typescript
-import opencascade from 'brepjs-opencascade';
-import { initFromOC, box, cylinder, shape } from 'brepjs';
-
-async function main() {
-  // Load and initialize the WASM kernel manually
-  const oc = await opencascade();
-  initFromOC(oc);
-
-  // Now all brepjs functions are ready to use
-  const part = shape(box(30, 20, 10)).cut(cylinder(5, 15)).val;
-  console.log('Volume:', shape(part).volume());
-}
-
-main().catch(console.error);
-```
-
-**When to use manual initialization:**
-
-- You want to show a loading indicator while the WASM kernel loads
-- You need to handle initialization errors explicitly
-- Your environment doesn't support top-level await (older bundlers, some test frameworks)
-- You're dynamically loading brepjs on demand rather than at startup
-
-**Browser example with loading indicator:**
+When using the standard import (Option B from Step 2), you can show a loading indicator while the WASM kernel downloads:
 
 ```typescript
 import opencascade from 'brepjs-opencascade';
@@ -381,7 +360,6 @@ async function initCAD() {
     initFromOC(oc);
     loader.remove();
 
-    // Now ready to use brepjs
     const b = box(10, 10, 10);
     console.log('Initialized! Volume:', shape(b).volume());
   } catch (err) {
@@ -392,7 +370,7 @@ async function initCAD() {
 initCAD();
 ```
 
-**Note:** `initFromOC()` only needs to be called once per application lifetime. After initialization, all brepjs functions remain ready to use.
+`initFromOC()` only needs to be called once per application lifetime.
 
 ---
 
@@ -429,6 +407,7 @@ You need TypeScript 5.9+ and `"lib": ["ES2022", "ESNext.Disposable"]` in your ts
 
 ## Next steps
 
+- **[Three.js Integration](./threejs-integration.md)** — Render shapes in the browser with Three.js
 - **[Which API?](./which-api.md)** — Choose between Sketcher, functional API, and Drawing API
 - **[B-Rep Concepts](./concepts.md)** — Understand the geometry model (vertices, edges, faces, solids)
 - **[Memory Management](./memory-management.md)** — How to clean up WASM objects
