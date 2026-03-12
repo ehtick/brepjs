@@ -42,6 +42,7 @@ function createMockBrepKernel() {
     revolve: vi.fn(() => allocId()),
     loft: vi.fn(() => allocId()),
     fillet: vi.fn(() => allocId()),
+    filletVariable: vi.fn(() => allocId()),
     chamfer: vi.fn(() => allocId()),
     shell: vi.fn(() => allocId()),
 
@@ -1240,6 +1241,102 @@ describe('BrepkitAdapter', () => {
       expect(pattern[0]).toBe(box);
       // 3 rotated copies
       expect(mock.copySolid).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('fillet (variable radius)', () => {
+    it('calls filletVariable with array-tuple radius', () => {
+      const mock = createMockBrepKernel();
+      const adapter = new BrepkitAdapter(mock);
+
+      const solid = adapter.makeBox(10, 10, 10);
+      const edges = (adapter.getEdges(solid) as BrepkitHandle[]).slice(0, 2);
+      adapter.fillet(solid, edges, [1, 3]);
+
+      expect(mock.filletVariable).toHaveBeenCalledOnce();
+      const spec = JSON.parse(mock.filletVariable.mock.calls[0]?.[1] as string);
+      expect(spec).toHaveLength(2);
+      expect(spec[0]).toEqual(expect.objectContaining({ startRadius: 1, endRadius: 3 }));
+      expect(spec[1]).toEqual(expect.objectContaining({ startRadius: 1, endRadius: 3 }));
+    });
+
+    it('calls filletVariable with per-edge function', () => {
+      const mock = createMockBrepKernel();
+      const adapter = new BrepkitAdapter(mock);
+
+      const solid = adapter.makeBox(10, 10, 10);
+      const edges = (adapter.getEdges(solid) as BrepkitHandle[]).slice(0, 1);
+      adapter.fillet(solid, edges, () => [2, 4]);
+
+      expect(mock.filletVariable).toHaveBeenCalledOnce();
+      const spec = JSON.parse(mock.filletVariable.mock.calls[0]?.[1] as string);
+      expect(spec).toHaveLength(1);
+      expect(spec[0]).toEqual(expect.objectContaining({ startRadius: 2, endRadius: 4 }));
+    });
+
+    it('uses fast path for constant radius', () => {
+      const mock = createMockBrepKernel();
+      const adapter = new BrepkitAdapter(mock);
+
+      const solid = adapter.makeBox(10, 10, 10);
+      const edges = (adapter.getEdges(solid) as BrepkitHandle[]).slice(0, 1);
+      adapter.fillet(solid, edges, 2);
+
+      expect(mock.fillet).toHaveBeenCalledOnce();
+      expect(mock.filletVariable).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('makeArc2dTangent', () => {
+    it('produces a correct arc for a quarter-circle', () => {
+      const mock = createMockBrepKernel();
+      const adapter = new BrepkitAdapter(mock);
+
+      // Quarter-circle: start=(1,0), tangent=(0,1), end=(0,1)
+      // Expected center = (0,0), radius = 1
+      const spy = vi.spyOn(adapter, 'makeArc2dThreePoints');
+      adapter.makeArc2dTangent(1, 0, 0, 1, 0, 1);
+
+      expect(spy).toHaveBeenCalledOnce();
+      const [sx, sy, mx, my, ex, ey] = spy.mock.calls[0];
+      expect(sx).toBeCloseTo(1, 10);
+      expect(sy).toBeCloseTo(0, 10);
+      expect(ex).toBeCloseTo(0, 10);
+      expect(ey).toBeCloseTo(1, 10);
+      // Midpoint should be on the unit circle at ~45°
+      const midR = Math.sqrt(mx * mx + my * my);
+      expect(midR).toBeCloseTo(1, 5);
+    });
+
+    it('falls back to a line for collinear tangent', () => {
+      const mock = createMockBrepKernel();
+      const adapter = new BrepkitAdapter(mock);
+
+      // Start=(0,0), tangent=(1,0), end=(5,0) — tangent parallel to chord
+      const spy = vi.spyOn(adapter, 'makeArc2dThreePoints');
+      const result = adapter.makeArc2dTangent(0, 0, 1, 0, 5, 0);
+
+      // Should NOT call makeArc2dThreePoints (degenerate case)
+      expect(spy).not.toHaveBeenCalled();
+      // Returns a line (from bk2d.makeLine2d)
+      expect(result).toBeDefined();
+    });
+
+    it('handles CW arc direction', () => {
+      const mock = createMockBrepKernel();
+      const adapter = new BrepkitAdapter(mock);
+
+      // Start=(1,0), tangent=(0,-1) → CW, end=(0,-1)
+      const spy = vi.spyOn(adapter, 'makeArc2dThreePoints');
+      adapter.makeArc2dTangent(1, 0, 0, -1, 0, -1);
+
+      expect(spy).toHaveBeenCalledOnce();
+      const [, , mx, my] = spy.mock.calls[0];
+      // Midpoint should be in the positive-x, negative-y quadrant (CW arc)
+      const midR = Math.sqrt(mx * mx + my * my);
+      expect(midR).toBeCloseTo(1, 5);
+      expect(mx).toBeGreaterThan(0);
+      expect(my).toBeLessThan(0);
     });
   });
 });

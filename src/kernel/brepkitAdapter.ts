@@ -1210,18 +1210,28 @@ export class BrepkitAdapter implements KernelAdapter {
     edges: KernelShape[],
     radius: number | [number, number] | ((edge: KernelShape) => number | [number, number])
   ): KernelShape {
-    const r = typeof radius === 'number' ? radius : Array.isArray(radius) ? radius[0] : 1;
-    if (typeof radius !== 'number') {
-      warnOnce(
-        'fillet-variable',
-        typeof radius === 'function'
-          ? 'Per-edge fillet radius function not supported; falling back to radius=1.'
-          : 'Variable-radius fillet not supported; using first radius only.'
-      );
-    }
+    const solidId = unwrapSolidOrThrow(shape, 'fillet');
     const edgeIds = edges.map((e) => unwrap(e, 'edge'));
-    const id = this.bk.fillet(unwrapSolidOrThrow(shape, 'fillet'), edgeIds, r);
-    return solidHandle(id);
+
+    // Constant radius — use the fast path
+    if (typeof radius === 'number') {
+      return solidHandle(this.bk.fillet(solidId, edgeIds, radius));
+    }
+
+    // Variable radius — build filletVariable spec
+    const spec: { edge: number; startRadius: number; endRadius: number }[] = [];
+    for (const [i, edge] of edges.entries()) {
+      const edgeId = edgeIds[i] ?? 0;
+      let r: number | [number, number];
+      if (typeof radius === 'function') {
+        r = radius(edge);
+      } else {
+        r = radius; // [number, number] tuple
+      }
+      const [startR, endR] = Array.isArray(r) ? r : [r, r];
+      spec.push({ edge: edgeId, startRadius: startR, endRadius: endR });
+    }
+    return solidHandle(this.bk.filletVariable(solidId, JSON.stringify(spec)));
   }
 
   chamfer(
@@ -1249,8 +1259,12 @@ export class BrepkitAdapter implements KernelAdapter {
     distance: number,
     angleDeg: number
   ): KernelShape {
-    // Approximate: compute second distance from angle and use uniform chamfer
-    warnOnce('chamfer-dist-angle', 'Distance-angle chamfer approximated as uniform chamfer.');
+    // Approximate: convert dist-angle to an averaged two-distance chamfer.
+    // brepkit lacks native dist-angle chamfer; this is the best available approximation.
+    warnOnce(
+      'chamfer-dist-angle',
+      'Distance-angle chamfer approximated as averaged two-distance chamfer.'
+    );
     const d2 = distance * Math.tan((angleDeg * Math.PI) / 180);
     const avgDist = (distance + d2) / 2;
     return this.chamfer(shape, edges, avgDist);
@@ -3810,21 +3824,55 @@ export class BrepkitAdapter implements KernelAdapter {
     ex: number,
     ey: number
   ): Curve2dHandle {
-    // Place midpoint offset along tangent direction from chord midpoint
+    // Exact tangent arc: find circle center C where:
+    //   (C - S) · T = 0        (tangent constraint)
+    //   |C - S| = |C - E|      (equidistant = on circle)
+    // Solution: C = S + t * perp(T), with t = -chord² / (2 * ((sy-ey)*ntx - (sx-ex)*nty))
     const len = Math.sqrt(tx * tx + ty * ty);
     const ntx = len > 0 ? tx / len : 0;
     const nty = len > 0 ? ty / len : 0;
-    // Offset proportional to chord length for a reasonable arc
-    const chord = Math.sqrt((ex - sx) ** 2 + (ey - sy) ** 2);
-    const offset = chord * 0.25;
-    return this.makeArc2dThreePoints(
-      sx,
-      sy,
-      (sx + ex) / 2 + nty * offset,
-      (sy + ey) / 2 - ntx * offset,
-      ex,
-      ey
-    );
+
+    const dx = sx - ex;
+    const dy = sy - ey;
+    const denom = 2 * (dy * ntx - dx * nty);
+
+    if (Math.abs(denom) < 1e-12) {
+      // Degenerate: tangent parallel to S→E chord
+      return bk2d.makeLine2d(sx, sy, ex, ey);
+    }
+
+    const chord2 = dx * dx + dy * dy;
+    const t = -chord2 / denom;
+    const cx = sx - t * nty;
+    const cy = sy + t * ntx;
+    const radius = Math.abs(t);
+
+    // Pick the arc midpoint on the correct side (matching tangent direction).
+    const a1 = Math.atan2(sy - cy, sx - cx);
+    const a2 = Math.atan2(ey - cy, ex - cx);
+
+    // At S the CCW tangent is perpendicular to the radius: (-sin(a1), cos(a1))
+    const ccwTanX = -(sy - cy) / radius;
+    const ccwTanY = (sx - cx) / radius;
+    const dotCcw = ntx * ccwTanX + nty * ccwTanY;
+
+    let aMid: number;
+    if (dotCcw > 0) {
+      // CCW arc from S to E
+      let da = a2 - a1;
+      if (da <= 0) da += 2 * Math.PI;
+      aMid = a1 + da / 2;
+    } else {
+      // CW arc from S to E
+      let da = a2 - a1;
+      if (da >= 0) da -= 2 * Math.PI;
+      aMid = a1 + da / 2;
+    }
+
+    const mx = cx + radius * Math.cos(aMid);
+    const my = cy + radius * Math.sin(aMid);
+
+    return this.makeArc2dThreePoints(sx, sy, mx, my, ex, ey);
   }
   makeEllipse2d(
     cx: number,
@@ -4451,62 +4499,54 @@ export class BrepkitAdapter implements KernelAdapter {
       return this.makeLineEdge(p1, p2);
     }
 
-    // Circles/arcs: split into multiple arc edges so wires have ≥3 edges
-    // (required by brepkit's makeFaceFromWire for plane normal computation).
+    // Circles/arcs: use exact Circle3D edges via makeCircleArc3d when the
+    // basis is a circle. This produces EdgeCurve::Circle edges that extrude
+    // into CylindricalSurface faces (not NURBS), matching OCCT topology.
     if (c.__bk2d === 'circle' || c.__bk2d === 'trimmed') {
-      const bounds = bk2d.curveBounds(c);
-      // Compute the actual angular span in radians (not normalized [0,1])
-      let angularSpan: number;
-      if (c.__bk2d === 'trimmed') {
-        angularSpan = Math.abs(c.tEnd - c.tStart);
-      } else {
-        angularSpan = 2 * Math.PI;
-      }
-      // Full/near-full circles → 4 arcs; large arcs → 2; small arcs → 1
-      const nSegments = angularSpan > Math.PI ? 4 : angularSpan > Math.PI / 2 ? 2 : 1;
-      const segmentSpan = (bounds.last - bounds.first) / nSegments;
-      const samplesPerSegment = Math.max(12, Math.ceil(angularSpan / nSegments / (Math.PI / 45)));
+      // Unwrap trimmed to find the circle basis.
+      // bk2d curve objects have dynamic structure — suppress type-safety here.
+      /* eslint-disable @typescript-eslint/no-explicit-any -- bk2d curve internals */
+      let basis: any = c;
+      while (basis.__bk2d === 'trimmed') basis = basis.basis;
 
-      if (nSegments === 1) {
-        const points: [number, number, number][] = [];
-        for (let i = 0; i <= samplesPerSegment; i++) {
-          const t = bounds.first + ((bounds.last - bounds.first) * i) / samplesPerSegment;
-          const [u, v] = bk2d.evaluateCurve2d(c, t);
-          points.push(lift(u, v));
+      // Only use exact circle edges if the basis is actually a circle
+      if (basis.__bk2d === 'circle') {
+        const circ = basis;
+        const center3d = lift(circ.cx, circ.cy);
+        // Axis direction: CCW circle → planeZ, CW → -planeZ
+        const axis: [number, number, number] = circ.sense
+          ? planeZ
+          : [-planeZ[0], -planeZ[1], -planeZ[2]];
+
+        const bounds = bk2d.curveBounds(c);
+        let angularSpan: number;
+        if (c.__bk2d === 'trimmed') {
+          angularSpan = Math.abs((c as any).tEnd - (c as any).tStart);
+        } else {
+          angularSpan = 2 * Math.PI;
         }
-        return this.interpolatePoints(points);
+        // Full/near-full circles → 4 arcs; large arcs → 2; small arcs → 1
+        const nSegments = angularSpan > Math.PI ? 4 : angularSpan > Math.PI / 2 ? 2 : 1;
+        const segmentSpan = (bounds.last - bounds.first) / nSegments;
+        const edgeIds: number[] = [];
+        for (let seg = 0; seg < nSegments; seg++) {
+          const [su, sv] = bk2d.evaluateCurve2d(c, bounds.first + seg * segmentSpan);
+          const [eu, ev] = bk2d.evaluateCurve2d(c, bounds.first + (seg + 1) * segmentSpan);
+          edgeIds.push(
+            this.bk.makeCircleArc3d(...lift(su, sv), ...lift(eu, ev), ...center3d, ...axis)
+          );
+        }
+        if (edgeIds.length === 1) return edgeHandle(edgeIds[0]!);
+        return wireHandle(this.bk.makeWire(edgeIds, false));
       }
 
-      // Build multiple arc edges and return as a wire.
-      // makeWire can now flatten wire children into edges.
-      const edgeIds: number[] = [];
-      for (let seg = 0; seg < nSegments; seg++) {
-        const segStart = bounds.first + seg * segmentSpan;
-        const segEnd = bounds.first + (seg + 1) * segmentSpan;
-        const points: [number, number, number][] = [];
-        for (let i = 0; i <= samplesPerSegment; i++) {
-          const t = segStart + ((segEnd - segStart) * i) / samplesPerSegment;
-          const [u, v] = bk2d.evaluateCurve2d(c, t);
-          points.push(lift(u, v));
-        }
-        const coords = points.flatMap(([px, py, pz]) => [px, py, pz]);
-        const degree = Math.min(3, points.length - 1);
-        edgeIds.push(this.bk.interpolatePoints(coords, degree));
-      }
-      const wireId = this.bk.makeWire(edgeIds, false);
-      return wireHandle(wireId);
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+
+      // Non-circle basis (e.g. ellipse): fall through to generic sampling below
     }
 
     // For Bezier/BSpline: lift control points exactly (preserves NURBS structure)
-    if (c.__bk2d === 'bezier') {
-      const points3d = c.poles.map(([u, v]) => lift(u, v));
-      if (points3d.length === 2) return this.makeLineEdge(points3d[0]!, points3d[1]!);
-      const degree = Math.min(3, points3d.length - 1);
-      const coords = points3d.flatMap(([px, py, pz]) => [px, py, pz]);
-      const id = this.bk.interpolatePoints(coords, degree);
-      return edgeHandle(id);
-    }
-    if (c.__bk2d === 'bspline') {
+    if (c.__bk2d === 'bezier' || c.__bk2d === 'bspline') {
       const points3d = c.poles.map(([u, v]) => lift(u, v));
       if (points3d.length === 2) return this.makeLineEdge(points3d[0]!, points3d[1]!);
       const degree = Math.min(3, points3d.length - 1);

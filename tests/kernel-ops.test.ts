@@ -10,7 +10,18 @@ import { describe, expect, it, beforeAll } from 'vitest';
 import { initKernel } from './setup.js';
 import { getKernel } from '../src/kernel/index.js';
 import type { KernelAdapter } from '../src/kernel/types.js';
-import { box, sphere, cone, torus, translate, getEdges, getFaces, getWires } from '../src/index.js';
+import {
+  box,
+  sphere,
+  cone,
+  torus,
+  translate,
+  getEdges,
+  getFaces,
+  getWires,
+  sketchRectangle,
+  castShape,
+} from '../src/index.js';
 
 let kernel: KernelAdapter;
 
@@ -24,6 +35,12 @@ beforeAll(async () => {
 function oc(shape: any): any {
   return shape.wrapped;
 }
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- raw OCCT instance for fallback path testing */
+function getRawOC(): any {
+  return (kernel as any).oc;
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // ---------------------------------------------------------------------------
 // constructorOps
@@ -129,6 +146,39 @@ describe('booleanOps', () => {
     expect(kernel.volume(fused)).toBeCloseTo(2000, 0);
   });
 
+  it('fuseAll with pairwise strategy', () => {
+    const a = oc(box(10, 10, 10));
+    const b = oc(translate(box(10, 10, 10), [5, 0, 0]));
+    const c = oc(translate(box(10, 10, 10), [10, 0, 0]));
+    const fused = kernel.fuseAll([a, b, c], { strategy: 'pairwise' });
+    expect(kernel.isValid(fused)).toBe(true);
+    expect(kernel.volume(fused)).toBeCloseTo(2000, 0);
+  });
+
+  it('fuseAll with simplify option', () => {
+    const a = oc(box(10, 10, 10));
+    const b = oc(translate(box(10, 10, 10), [10, 0, 0]));
+    const fused = kernel.fuseAll([a, b], { simplify: true });
+    expect(kernel.isValid(fused)).toBe(true);
+    expect(kernel.volume(fused)).toBeCloseTo(2000, 0);
+  });
+
+  it('fuseAll with pairwise strategy and simplify', () => {
+    const a = oc(box(10, 10, 10));
+    const b = oc(translate(box(10, 10, 10), [10, 0, 0]));
+    const fused = kernel.fuseAll([a, b], { strategy: 'pairwise', simplify: true });
+    expect(kernel.isValid(fused)).toBe(true);
+    expect(kernel.volume(fused)).toBeCloseTo(2000, 0);
+  });
+
+  it('fuse with fuzzyValue', () => {
+    const a = oc(box(10, 10, 10));
+    const b = oc(translate(box(10, 10, 10), [9.999, 0, 0]));
+    const fused = kernel.fuse(a, b, { fuzzyValue: 0.01 });
+    expect(kernel.isValid(fused)).toBe(true);
+    expect(kernel.volume(fused)).toBeGreaterThan(1500);
+  });
+
   it('cutAll', () => {
     const base = oc(box(20, 20, 20));
     const t1 = oc(box(5, 5, 5));
@@ -181,6 +231,68 @@ describe('sweepOps', () => {
       expect(lofted).toBeDefined();
       expect(kernel.volume(lofted)).toBeGreaterThan(0);
     }
+  });
+
+  it('loft with ruled option', () => {
+    const face1 = box(10, 10, 0.01);
+    const face2 = translate(box(5, 5, 0.01), [2.5, 2.5, 20]);
+    const wires1 = getWires(face1);
+    const wires2 = getWires(face2);
+    if (wires1.length > 0 && wires2.length > 0) {
+      const lofted = kernel.loft([oc(wires1[0]!), oc(wires2[0]!)], true); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+      expect(lofted).toBeDefined();
+      expect(kernel.volume(lofted)).toBeGreaterThan(0);
+    }
+  });
+
+  it('loft with start and end vertices', () => {
+    const face1 = box(6, 6, 0.01);
+    const face2 = translate(box(6, 6, 0.01), [0, 0, 15]);
+    const wires1 = getWires(face1);
+    const wires2 = getWires(face2);
+    if (wires1.length > 0 && wires2.length > 0) {
+      const startVertex = kernel.makeVertex(3, 3, -5);
+      const endVertex = kernel.makeVertex(3, 3, 20);
+      const lofted = kernel.loft(
+        [oc(wires1[0]!), oc(wires2[0]!)], // eslint-disable-line @typescript-eslint/no-non-null-assertion
+        false,
+        startVertex,
+        endVertex
+      );
+      expect(lofted).toBeDefined();
+      expect(kernel.volume(lofted)).toBeGreaterThan(0);
+    }
+  });
+
+  it('revolve', () => {
+    const rect = sketchRectangle(2, 5, { origin: [6, 0] });
+    const face = oc(castShape(rect.face().wrapped));
+    const axis = kernel.createAxis1(0, 0, 0, 0, 1, 0);
+    const revolved = kernel.revolve(face, axis, Math.PI * 2);
+    expect(revolved).toBeDefined();
+    expect(kernel.volume(revolved)).toBeGreaterThan(0);
+  });
+
+  it('sweep with spine wire', () => {
+    const rect = sketchRectangle(2, 2);
+    const profileWires = getWires(castShape(rect.face().wrapped));
+    expect(profileWires.length).toBeGreaterThan(0);
+    const spineEdge = kernel.makeLineEdge([0, 0, 0], [0, 0, 20]);
+    const spine = kernel.makeWire([spineEdge]);
+    const swept = kernel.sweep(oc(profileWires[0]!), spine, { transitionMode: 0 }); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+    expect(swept).toBeDefined();
+    expect(kernel.volume(swept)).toBeGreaterThan(0);
+  });
+
+  it('sweep without transitionMode', () => {
+    const rect = sketchRectangle(2, 2);
+    const profileWires = getWires(castShape(rect.face().wrapped));
+    expect(profileWires.length).toBeGreaterThan(0);
+    const spineEdge = kernel.makeLineEdge([0, 0, 0], [0, 0, 10]);
+    const spine = kernel.makeWire([spineEdge]);
+    const swept = kernel.sweep(oc(profileWires[0]!), spine); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+    expect(swept).toBeDefined();
+    expect(kernel.volume(swept)).toBeGreaterThan(0);
   });
 });
 
@@ -566,5 +678,121 @@ describe('curveOps', () => {
     const edge = kernel.approximatePoints(points, { tolerance: 0.01, degMax: 5 });
     expect(edge).toBeDefined();
     expect(kernel.shapeType(edge)).toBe('edge');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// topologyOps JS fallback paths
+// ---------------------------------------------------------------------------
+
+describe('topologyOps JS fallback', () => {
+  it('iterShapes falls back to JS TopExp_Explorer when TopologyExtractor is absent', () => {
+    const ocInst = getRawOC();
+    const saved = ocInst.TopologyExtractor;
+    try {
+      // Remove C++ extractor to force JS fallback
+      ocInst.TopologyExtractor = undefined;
+
+      const b = box(10, 10, 10);
+      // getFaces uses kernel.iterShapes internally
+      const faces = getFaces(b);
+      expect(faces.length).toBe(6);
+    } finally {
+      ocInst.TopologyExtractor = saved;
+    }
+  });
+
+  it('JS fallback deduplicates shapes by hash code', () => {
+    const ocInst = getRawOC();
+    const saved = ocInst.TopologyExtractor;
+    try {
+      ocInst.TopologyExtractor = undefined;
+
+      const b = box(10, 10, 10);
+      const edges = getEdges(b);
+      // A box has 12 edges
+      expect(edges.length).toBe(12);
+    } finally {
+      ocInst.TopologyExtractor = saved;
+    }
+  });
+
+  it('JS fallback handles wires', () => {
+    const ocInst = getRawOC();
+    const saved = ocInst.TopologyExtractor;
+    try {
+      ocInst.TopologyExtractor = undefined;
+
+      const b = box(10, 10, 10);
+      const wires = getWires(b);
+      // A box has 6 wires (one per face)
+      expect(wires.length).toBe(6);
+    } finally {
+      ocInst.TopologyExtractor = saved;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// topologyOps iterShapeList fallback
+// ---------------------------------------------------------------------------
+
+describe('evolutionOps JS fallback', () => {
+  it('translateWithHistory falls back to JS evolution when EvolutionExtractor is absent', () => {
+    const ocInst = getRawOC();
+    const savedEvol = ocInst.EvolutionExtractor;
+    try {
+      ocInst.EvolutionExtractor = undefined;
+
+      const b = box(10, 10, 10);
+      const faces = kernel.iterShapes(oc(b), 'face');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw OCCT shape access
+      const hashes = faces.map((f: any) => f.HashCode(2147483647));
+      const result = kernel.translateWithHistory(oc(b), 5, 0, 0, hashes, 2147483647);
+      expect(result).toBeDefined();
+      expect(result.shape).toBeDefined();
+      expect(result.evolution).toBeDefined();
+      expect(result.evolution.modified.size).toBeGreaterThanOrEqual(0);
+    } finally {
+      ocInst.EvolutionExtractor = savedEvol;
+    }
+  });
+
+  it('JS evolution fallback handles empty faceHashes', () => {
+    const ocInst = getRawOC();
+    const savedEvol = ocInst.EvolutionExtractor;
+    try {
+      ocInst.EvolutionExtractor = undefined;
+
+      const b = box(10, 10, 10);
+      // Empty faceHashes should return EMPTY_EVOLUTION
+      const result = kernel.translateWithHistory(oc(b), 5, 0, 0, [], 2147483647);
+      expect(result.evolution.modified.size).toBe(0);
+      expect(result.evolution.generated.size).toBe(0);
+      expect(result.evolution.deleted.size).toBe(0);
+    } finally {
+      ocInst.EvolutionExtractor = savedEvol;
+    }
+  });
+
+  it('JS evolution fallback with ListIterator absent uses copy-and-consume', () => {
+    const ocInst = getRawOC();
+    const savedEvol = ocInst.EvolutionExtractor;
+    const savedIter = ocInst.TopTools_ListIteratorOfListOfShape;
+    try {
+      ocInst.EvolutionExtractor = undefined;
+      ocInst.TopTools_ListIteratorOfListOfShape = undefined;
+
+      const b = box(10, 10, 10);
+      const faces = kernel.iterShapes(oc(b), 'face');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw OCCT shape access
+      const hashes = faces.map((f: any) => f.HashCode(2147483647));
+      const result = kernel.translateWithHistory(oc(b), 5, 0, 0, hashes, 2147483647);
+      expect(result).toBeDefined();
+      expect(result.shape).toBeDefined();
+    } finally {
+      ocInst.EvolutionExtractor = savedEvol;
+      ocInst.TopTools_ListIteratorOfListOfShape = savedIter;
+    }
   });
 });
