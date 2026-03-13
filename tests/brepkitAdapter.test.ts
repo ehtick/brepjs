@@ -1138,8 +1138,24 @@ describe('BrepkitAdapter', () => {
 
       adapter.meshEdges(box, 0.05, 0.5);
 
-      // Should pass deflection to native meshEdges
+      // Falls back to native meshEdges when meshEdgesAll is unavailable (pre-1.0.8)
       expect(mock.meshEdges).toHaveBeenCalledWith(expect.any(Number), 0.05);
+    });
+
+    it('meshEdges prefers meshEdgesAll when available (1.0.8+)', () => {
+      const mock = createMockBrepKernel();
+      mock.meshEdgesAll = vi.fn((_solid: number, _deflection: number) => ({
+        positions: [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0],
+        offsets: [0, 6],
+        edgeCount: 2,
+      }));
+      const adapter = new BrepkitAdapter(mock);
+      const box = adapter.makeBox(1, 1, 1);
+
+      adapter.meshEdges(box, 0.1, 0.5);
+
+      expect(mock.meshEdgesAll).toHaveBeenCalledWith(expect.any(Number), 0.1);
+      expect(mock.meshEdges).not.toHaveBeenCalled();
     });
   });
 
