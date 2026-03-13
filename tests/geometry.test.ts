@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll } from 'vitest';
-import { initKernel } from './setup.js';
+import { currentKernel, initKernel } from './setup.js';
 import {
   makePlane,
   findCurveType,
@@ -54,7 +54,7 @@ describe('makePlane', () => {
   });
 });
 
-describe('findCurveType', () => {
+describe.skipIf(currentKernel !== 'occt')('findCurveType (OCCT-specific)', () => {
   it('returns an error for an unknown type', () => {
     expect(isErr(findCurveType(-9999))).toBe(true);
   });
