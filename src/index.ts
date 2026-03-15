@@ -166,6 +166,7 @@ export {
 
 export {
   createBlueprint,
+  createCompoundBlueprint,
   // Utilities - clean 2D aliases
   getBounds2D,
   getOrientation2D,
@@ -572,6 +573,8 @@ export {
 
 export { hull, type HullOptions } from './topology/hullFns.js';
 
+export { convexHull } from './operations/convexHullFns.js';
+
 export { minkowski, type MinkowskiOptions } from './topology/minkowskiFns.js';
 
 export { polyhedron, type PolyhedronOptions } from './topology/polyhedronFns.js';
@@ -706,6 +709,7 @@ export { importSTEP, importSTL, importIGES } from './io/importFns.js';
 export { importDXF } from './io/dxfImportFns.js';
 export { importOBJ } from './io/objImportFns.js';
 export { importThreeMF } from './io/threemfImportFns.js';
+export { importGLB } from './io/gltfImportFns.js';
 export type { DXFImportOptions } from './io/dxfImportFns.js';
 
 // ── Query (functional, immutable finders) ──
