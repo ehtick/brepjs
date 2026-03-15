@@ -89,7 +89,7 @@ function centroidDistSq(a: [number, number, number], b: [number, number, number]
 /** Compute face centroid as the average of tessellation vertices. */
 function faceCentroidById(bk: BrepkitKernel, faceId: number): [number, number, number] {
   try {
-    const pos: number[] = bk.tessellateFace(faceId, 1.0).positions;
+    const pos = bk.tessellateFace(faceId, 1.0).positions;
     if (pos.length < 3) return [0, 0, 0];
     let cx = 0;
     let cy = 0;
@@ -127,7 +127,11 @@ function matchFacesGeometrically(
   const hashCount = Math.min(inputFaceIds.length, inputFaceHashes.length);
 
   // Snapshot input face signatures (skip faces where normal can't be computed)
-  const inputSigs: { hash: number; normal: number[]; centroid: [number, number, number] }[] = [];
+  const inputSigs: {
+    hash: number;
+    normal: ArrayLike<number>;
+    centroid: [number, number, number];
+  }[] = [];
   for (let i = 0; i < hashCount; i++) {
     const fid = inputFaceIds[i]!;
     try {
@@ -145,7 +149,11 @@ function matchFacesGeometrically(
   }
 
   // Snapshot output face signatures (skip faces where normal can't be computed)
-  const outputSigs: { hash: number; normal: number[]; centroid: [number, number, number] }[] = [];
+  const outputSigs: {
+    hash: number;
+    normal: ArrayLike<number>;
+    centroid: [number, number, number];
+  }[] = [];
   for (const fid of outputFaceIds) {
     try {
       const normal = bk.getFaceNormal(fid);

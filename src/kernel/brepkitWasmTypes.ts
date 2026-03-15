@@ -2,11 +2,14 @@
  * Type-safe interface for the brepkit WASM kernel (`BrepKernel`).
  *
  * This mirrors the Rust `BrepKernel` struct's `#[wasm_bindgen]` exports.
- * Every `this.bk.*` call in `brepkitAdapter.ts` is typed here so TypeScript
- * catches mismatches at compile time.
+ * Synced against `brepkit-wasm@2.5.0` (`brepkit_wasm.d.ts`).
  *
- * Methods not yet exposed by the WASM build are marked **optional** (`?`).
- * Callers must guard with `typeof this.bk.method === 'function'` before use.
+ * Methods not yet exposed by the WASM build are marked **optional** (`?`)
+ * with `@future` JSDoc tags. Callers must guard with
+ * `typeof this.bk.method === 'function'` before use.
+ *
+ * Input array params use union types (`Float64Array | number[]`) — the WASM
+ * prefers typed arrays but wasm-bindgen coerces plain arrays.
  *
  * @module
  */
@@ -16,11 +19,11 @@
 /** Triangle mesh returned by `tessellateFace` / `tessellateSolid`. */
 export interface BrepkitMesh {
   /** Flattened vertex positions `[x, y, z, ...]`. */
-  readonly positions: number[];
+  readonly positions: Float64Array;
   /** Flattened per-vertex normals `[nx, ny, nz, ...]`. */
-  readonly normals: number[];
+  readonly normals: Float64Array;
   /** Triangle indices (groups of 3). */
-  readonly indices: number[];
+  readonly indices: Uint32Array;
   /** Number of vertices. */
   readonly vertexCount: number;
   /** Number of triangles. */
@@ -32,9 +35,9 @@ export interface BrepkitMesh {
 /** Edge polylines returned by `meshEdges`. */
 export interface BrepkitEdgeLines {
   /** Flattened vertex positions `[x, y, z, ...]`. */
-  readonly positions: number[];
+  readonly positions: Float64Array;
   /** Start index into positions for each edge polyline (already ×3). */
-  readonly offsets: number[];
+  readonly offsets: Uint32Array;
   /** Number of edges. */
   readonly edgeCount: number;
 }
@@ -70,7 +73,7 @@ export interface BrepkitKernel {
   makeRectangle(width: number, height: number): number;
 
   /** Create a polygonal face from flat coords `[x,y,z,...]`. Returns face handle. */
-  makePolygon(coords: number[]): number;
+  makePolygon(coords: Float64Array | number[]): number;
 
   /** Create a circular polygon face in XY. Returns face handle. */
   makeCircle(radius: number, segments: number): number;
@@ -125,13 +128,13 @@ export interface BrepkitKernel {
     endY: number,
     endZ: number,
     degree: number,
-    knots: number[],
-    controlPoints: number[],
-    weights: number[]
+    knots: Float64Array | number[],
+    controlPoints: Float64Array | number[],
+    weights: Float64Array | number[]
   ): number;
 
   /** Create a wire from ordered edge handles. Returns wire handle. */
-  makeWire(edgeHandles: number[], closed: boolean): number;
+  makeWire(edgeHandles: Uint32Array | number[], closed: boolean): number;
 
   /** Create a planar face from a wire. Returns face handle. */
   makeFaceFromWire(wire: number): number;
@@ -140,10 +143,10 @@ export interface BrepkitKernel {
   solidFromShell(shell: number): number;
 
   /** Create a compound from solid handles. Returns compound handle. */
-  makeCompound(solidHandles: number[]): number;
+  makeCompound(solidHandles: Uint32Array | number[]): number;
 
   /** Create a closed polygon wire from flat coords. Returns wire handle. */
-  makePolygonWire(coords: number[]): number;
+  makePolygonWire(coords: Float64Array | number[]): number;
 
   /** Create a regular polygon wire in XY. Returns wire handle. */
   makeRegularPolygonWire(radius: number, nSides: number): number;
@@ -152,7 +155,7 @@ export interface BrepkitKernel {
   makeCircleFace(radius: number, segments: number): number;
 
   /** Add holes (inner wires) to a face. Returns new face handle. */
-  addHolesToFace(face: number, wireIds: number[]): number;
+  addHolesToFace(face: number, wireIds: Uint32Array | number[]): number;
 
   // ── Boolean operations ─────────────────────────────────────────
 
@@ -168,7 +171,7 @@ export interface BrepkitKernel {
   /** Cut target solid with multiple tool solids in a single WASM call. Returns new solid handle. */
   compoundCut(target: number, tool_ids: Uint32Array): number;
 
-  /** Fuse multiple solids in a single WASM call. Returns new solid handle. Optional — may not exist in older versions. */
+  /** @future Not in brepkit-wasm 2.5.0. Fuse multiple solids in a single WASM call. Returns new solid handle. */
   compoundFuse?(solid_ids: Uint32Array): number;
 
   /** Fuse with evolution tracking. Returns JSON string. */
@@ -204,19 +207,19 @@ export interface BrepkitKernel {
   sweep(
     face: number,
     pathDegree: number,
-    pathKnots: number[],
-    pathControlPoints: number[],
-    pathWeights: number[]
+    pathKnots: Float64Array | number[],
+    pathControlPoints: Float64Array | number[],
+    pathWeights: Float64Array | number[]
   ): number;
 
   /** Loft through an array of face profiles. Returns solid handle. */
-  loft(faceIds: number[]): number;
+  loft(faceIds: Uint32Array | number[]): number;
 
   /** Loft with smooth NURBS surface fitting. Returns solid handle. */
-  loftSmooth(faceIds: number[]): number;
+  loftSmooth(faceIds: Uint32Array | number[]): number;
 
   /** Loft with configurable options (JSON string). Returns solid handle. */
-  loftWithOptions(faces: number[], options: string): number;
+  loftWithOptions(faces: Uint32Array | number[], options: string): number;
 
   /** Thicken a face into a solid by offsetting along its normal. */
   thicken(face: number, thickness: number): number;
@@ -228,28 +231,28 @@ export interface BrepkitKernel {
   makeSolid(faceHandles: Uint32Array): number;
 
   /** Weld shells and faces into a solid. Returns solid handle. */
-  weldShellsAndFaces(faceHandles: number[], tolerance: number): number;
+  weldShellsAndFaces(faceHandles: Uint32Array | number[], tolerance: number): number;
 
   /** Sweep with smooth NURBS surface fitting along a path. Returns solid handle. */
   sweepSmooth(
     face: number,
     pathDegree: number,
-    pathKnots: number[],
-    pathControlPoints: number[],
-    pathWeights: number[]
+    pathKnots: Float64Array | number[],
+    pathControlPoints: Float64Array | number[],
+    pathWeights: Float64Array | number[]
   ): number;
 
   /** Pipe sweep along a NURBS path. Returns solid handle. */
   pipe(
     face: number,
     pathDegree: number,
-    pathKnots: number[],
-    pathControlPoints: number[],
-    pathWeights: number[]
+    pathKnots: Float64Array | number[],
+    pathControlPoints: Float64Array | number[],
+    pathWeights: Float64Array | number[]
   ): number;
 
   /** Sweep a face along edge handles. Returns solid handle. */
-  sweepAlongEdges(profile: number, edgeIds: number[]): number;
+  sweepAlongEdges(profile: number, edgeIds: Uint32Array | number[]): number;
 
   /** Helical sweep of a profile. Returns solid handle. */
   helicalSweep(
@@ -270,26 +273,32 @@ export interface BrepkitKernel {
     profile: number,
     pathEdge: number,
     contactMode: string,
-    scaleValues: number[],
-    segments: number
+    scaleValues: Float64Array | number[],
+    segments: number,
+    cornerMode: string
   ): number;
 
   // ── Modifiers ──────────────────────────────────────────────────
 
   /** Fillet edges of a solid with constant radius. Returns solid handle. */
-  fillet(solid: number, edgeIds: number[], radius: number): number;
+  fillet(solid: number, edgeIds: Uint32Array | number[], radius: number): number;
 
   /** Fillet edges with variable radius (JSON spec). Returns solid handle. */
   filletVariable(solid: number, json: string): number;
 
   /** Chamfer edges of a solid. Returns solid handle. */
-  chamfer(solid: number, edgeIds: number[], distance: number): number;
+  chamfer(solid: number, edgeIds: Uint32Array | number[], distance: number): number;
 
-  /** Asymmetric chamfer: d1 on first adjacent face, d2 on second. Optional — added in 2.2.0. */
-  chamferAsymmetric?(solid: number, edgeIds: number[], d1: number, d2: number): number;
+  /** @future Not in brepkit-wasm 2.5.0. Asymmetric chamfer: d1 on first adjacent face, d2 on second. */
+  chamferAsymmetric?(
+    solid: number,
+    edgeIds: Uint32Array | number[],
+    d1: number,
+    d2: number
+  ): number;
 
   /** Shell a solid by removing faces. Returns solid handle. */
-  shell(solid: number, thickness: number, faceIds: number[]): number;
+  shell(solid: number, thickness: number, faceIds: Uint32Array | number[]): number;
 
   /** Offset a solid by distance. Returns solid handle. */
   offsetSolid(solid: number, distance: number): number;
@@ -306,7 +315,7 @@ export interface BrepkitKernel {
   /** Draft (taper) faces of a solid. Returns solid handle. */
   draft(
     solid: number,
-    faceHandles: number[],
+    faceHandles: Uint32Array | number[],
     pullX: number,
     pullY: number,
     pullZ: number,
@@ -343,13 +352,13 @@ export interface BrepkitKernel {
   // ── Transform / Copy / Mirror / Pattern ────────────────────────
 
   /** Transform a solid in-place with 4×4 row-major matrix. */
-  transformSolid(solid: number, matrix: number[]): void;
+  transformSolid(solid: number, matrix: Float64Array | number[]): void;
 
   /** Deep copy a solid. Returns new solid handle. */
   copySolid(solid: number): number;
 
   /** Copy and transform in one pass. Returns new solid handle. */
-  copyAndTransformSolid(solid: number, matrix: number[]): number;
+  copyAndTransformSolid(solid: number, matrix: Float64Array | number[]): number;
 
   /** Mirror a solid across a plane. Returns new solid handle. */
   mirror(
@@ -393,10 +402,13 @@ export interface BrepkitKernel {
   // ── Sewing / Fill ──────────────────────────────────────────────
 
   /** Sew faces into a solid. Returns solid handle. */
-  sewFaces(faceHandles: number[], tolerance: number): number;
+  sewFaces(faceHandles: Uint32Array | number[], tolerance: number): number;
 
   /** Fill a 4-sided boundary with Coons patch. Returns face handle. */
-  fillCoonsPatch(boundaryCoords: number[], curveLengths: number[]): number;
+  fillCoonsPatch(
+    boundaryCoords: Float64Array | number[],
+    curveLengths: Uint32Array | number[]
+  ): number;
 
   /** Untrim a NURBS face. Returns new face handle. */
   untrimFace(face: number, samplesPerCurve: number, interiorSamples: number): number;
@@ -428,25 +440,25 @@ export interface BrepkitKernel {
    * Get vertex positions of an edge.
    * Returns `[startX, startY, startZ, endX, endY, endZ]`.
    */
-  getEdgeVertices(edge: number): number[];
+  getEdgeVertices(edge: number): Float64Array;
 
   /** Get vertex position `[x, y, z]`. */
-  getVertexPosition(vertex: number): number[];
+  getVertexPosition(vertex: number): Float64Array;
 
   /** Get face normal `[nx, ny, nz]` (planar faces only). */
-  getFaceNormal(face: number): number[];
+  getFaceNormal(face: number): Float64Array;
 
   /** Get entity counts `[faces, edges, vertices]` of a solid. */
-  getEntityCounts(solid: number): number[];
+  getEntityCounts(solid: number): Uint32Array;
 
   /** Get edge-to-face adjacency map as JSON string. */
   edgeToFaceMap(solid: number): string;
 
   /** Get shared edges between two faces. */
-  sharedEdges(faceA: number, faceB: number): number[];
+  sharedEdges(faceA: number, faceB: number): Uint32Array;
 
   /** Get faces adjacent to a face within a solid. */
-  adjacentFaces(solid: number, face: number): number[];
+  adjacentFaces(solid: number, face: number): Uint32Array;
 
   /** Check if an edge is forward in its parent wire. */
   isEdgeForwardInWire(edge: number, wire: number): boolean;
@@ -461,7 +473,7 @@ export interface BrepkitKernel {
   copyWire(wire: number): number;
 
   /** Transform a wire in place with a 4x4 matrix. */
-  transformWire(wire: number, matrix: number[]): void;
+  transformWire(wire: number, matrix: Float64Array | number[]): void;
 
   /** Measure curvature at parameter t on an edge. Returns [kappa, tx, ty, tz, nx, ny, nz, bx, by, bz]. */
   measureCurvatureAtEdge(edge: number, t: number): Float64Array;
@@ -478,25 +490,25 @@ export interface BrepkitKernel {
   getEdgeCurveType(edge: number): string;
 
   /** Get edge curve parameter range `[tMin, tMax]`. */
-  getEdgeCurveParameters(edge: number): number[];
+  getEdgeCurveParameters(edge: number): Float64Array;
 
   /** Evaluate edge curve at parameter. Returns `[x, y, z]`. */
-  evaluateEdgeCurve(edge: number, param: number): number[];
+  evaluateEdgeCurve(edge: number, param: number): Float64Array;
 
   /** Evaluate edge curve + tangent at parameter. Returns `[px,py,pz, tx,ty,tz]`. */
-  evaluateEdgeCurveD1(edge: number, param: number): number[];
+  evaluateEdgeCurveD1(edge: number, param: number): Float64Array;
 
   /** Evaluate surface at (u,v). Returns `[x, y, z]`. */
-  evaluateSurface(face: number, u: number, v: number): number[];
+  evaluateSurface(face: number, u: number, v: number): Float64Array;
 
   /** Evaluate surface normal at (u,v). Returns `[nx, ny, nz]`. */
-  evaluateSurfaceNormal(face: number, u: number, v: number): number[];
+  evaluateSurfaceNormal(face: number, u: number, v: number): Float64Array;
 
   /** Get UV domain `[uMin, uMax, vMin, vMax]`. */
-  getSurfaceDomain(face: number): number[];
+  getSurfaceDomain(face: number): Float64Array;
 
   /** Project a 3D point onto a face surface. Returns `[x, y, z]`. */
-  projectPointOnSurface(face: number, x: number, y: number, z: number): number[];
+  projectPointOnSurface(face: number, x: number, y: number, z: number): Float64Array;
 
   /** Get analytic surface parameters as JSON. */
   getAnalyticSurfaceParams(face: number): string;
@@ -507,7 +519,7 @@ export interface BrepkitKernel {
   // ── Measurement ────────────────────────────────────────────────
 
   /** Bounding box `[minX, minY, minZ, maxX, maxY, maxZ]`. */
-  boundingBox(solid: number): number[];
+  boundingBox(solid: number): Float64Array;
 
   /** Volume of a solid (tessellation-based). */
   volume(solid: number, deflection: number): number;
@@ -519,7 +531,7 @@ export interface BrepkitKernel {
   faceArea(face: number, deflection: number): number;
 
   /** Center of mass `[x, y, z]`. */
-  centerOfMass(solid: number, deflection: number): number[];
+  centerOfMass(solid: number, deflection: number): Float64Array;
 
   /** Edge length. */
   edgeLength(edge: number): number;
@@ -530,7 +542,7 @@ export interface BrepkitKernel {
   // ── Distance / Classification ──────────────────────────────────
 
   /** Classify a point relative to a solid. Returns "inside"|"outside"|"boundary". */
-  classifyPoint(solid: number, x: number, y: number, z: number): string;
+  classifyPoint(solid: number, x: number, y: number, z: number, tolerance: number): string;
 
   /** Classify using generalized winding numbers. */
   classifyPointWinding(solid: number, x: number, y: number, z: number, tolerance: number): string;
@@ -542,19 +554,19 @@ export interface BrepkitKernel {
    * Distance from a point to a solid.
    * Returns `[distance, closestX, closestY, closestZ]`.
    */
-  pointToSolidDistance(px: number, py: number, pz: number, solid: number): number[];
+  pointToSolidDistance(px: number, py: number, pz: number, solid: number): Float64Array;
 
   /**
    * Minimum distance from a point to a face.
    * Returns `[distance, closestX, closestY, closestZ]`.
    */
-  pointToFaceDistance(px: number, py: number, pz: number, face: number): number[];
+  pointToFaceDistance(px: number, py: number, pz: number, face: number): Float64Array;
 
   /**
    * Minimum distance from a point to an edge.
    * Returns `[distance, closestX, closestY, closestZ]`.
    */
-  pointToEdgeDistance(px: number, py: number, pz: number, edge: number): number[];
+  pointToEdgeDistance(px: number, py: number, pz: number, edge: number): Float64Array;
 
   /**
    * Minimum distance between two solids.
@@ -575,7 +587,7 @@ export interface BrepkitKernel {
   validateSolidWithOptions?(solid: number, tolerance_scale: number): number;
 
   /** Heal a solid (fix orientations, merge vertices, etc.). */
-  healSolid(solid: number): void;
+  healSolid(solid: number): number;
 
   /** Merge coincident vertices. Returns merge count. */
   mergeCoincidentVertices(solid: number, tolerance: number): number;
@@ -589,7 +601,7 @@ export interface BrepkitKernel {
   /** Repair a solid (comprehensive healing). Returns error count after repair. */
   repairSolid(solid: number): number;
 
-  /** Return detailed validation report as JSON string. Optional — may not exist in all versions. */
+  /** @future Not in brepkit-wasm 2.5.0. Return detailed validation report as JSON string. */
   validateSolidDetails?(solid: number): string;
 
   /** Unify adjacent faces on the same surface. Returns removed face count. Optional — added in 1.0.8. */
@@ -604,7 +616,7 @@ export interface BrepkitKernel {
   tessellateSolid(solid: number, deflection: number): BrepkitMesh;
 
   /** Tessellate an edge into polyline points. Returns flat `[x,y,z,...]`. */
-  tessellateEdge(edge: number, numPoints: number): number[];
+  tessellateEdge(edge: number, numPoints: number): Float64Array;
 
   /** Sample edges of a solid into polylines (smooth edges filtered out). */
   meshEdges(solid: number, deflection: number): BrepkitEdgeLines;
@@ -613,7 +625,7 @@ export interface BrepkitKernel {
   meshEdgesAll?(solid: number, deflection: number): BrepkitEdgeLines;
 
   /** Convex hull from flat coords. Returns solid handle. */
-  convexHull(coords: number[]): number;
+  convexHull(coords: Float64Array | number[]): number;
 
   // ── Export ─────────────────────────────────────────────────────
 
@@ -667,11 +679,15 @@ export interface BrepkitKernel {
   // ── NURBS curve operations ─────────────────────────────────────
 
   /** Approximate a curve through points (least-squares). Returns edge handle. */
-  approximateCurve(coords: number[], degree: number, numControlPoints: number): number;
+  approximateCurve(
+    coords: Float64Array | number[],
+    degree: number,
+    numControlPoints: number
+  ): number;
 
   /** Approximate via LSPIA. Returns edge handle. */
   approximateCurveLspia(
-    coords: number[],
+    coords: Float64Array | number[],
     degree: number,
     numControlPoints: number,
     tolerance: number,
@@ -679,7 +695,7 @@ export interface BrepkitKernel {
   ): number;
 
   /** Interpolate points into a smooth NURBS edge. Returns edge handle. */
-  interpolatePoints(coords: number[], degree: number): number;
+  interpolatePoints(coords: Float64Array | number[], degree: number): number;
 
   /** Insert a knot into an edge's NURBS curve. Returns new edge handle. */
   curveKnotInsert(edge: number, knot: number, times: number): number;
@@ -688,7 +704,7 @@ export interface BrepkitKernel {
   curveKnotRemove(edge: number, knot: number, tolerance: number): number;
 
   /** Split a NURBS curve at parameter. Returns `[edge1, edge2]`. */
-  curveSplit(edge: number, u: number): number[];
+  curveSplit(edge: number, u: number): Uint32Array;
 
   /** Elevate degree of a NURBS curve. Returns new edge handle. */
   curveDegreeElevate(edge: number, elevateBy: number): number;
@@ -697,7 +713,7 @@ export interface BrepkitKernel {
 
   /** Interpolate a grid of points into a NURBS surface. Returns face handle. */
   interpolateSurface(
-    coords: number[],
+    coords: Float64Array | number[],
     rows: number,
     cols: number,
     degreeU: number,
@@ -706,7 +722,7 @@ export interface BrepkitKernel {
 
   /** Approximate a point grid via LSPIA. Returns face handle. */
   approximateSurfaceLspia(
-    coords: number[],
+    coords: Float64Array | number[],
     rows: number,
     cols: number,
     degreeU: number,
@@ -720,39 +736,39 @@ export interface BrepkitKernel {
   // ── Feature detection ──────────────────────────────────────────
 
   /** Detect small features (faces below area threshold). Returns face handles. */
-  detectSmallFeatures(solid: number, areaThreshold: number, deflection: number): number[];
+  detectSmallFeatures(solid: number, areaThreshold: number, deflection: number): Uint32Array;
 
   /** Recognize geometric features. Returns JSON string. */
   recognizeFeatures(solid: number, deflection: number): string;
 
   /** Remove faces from a solid (defeaturing). Returns new solid handle. */
-  defeature(solid: number, faceHandles: number[]): number;
+  defeature(solid: number, faceHandles: Uint32Array | number[]): number;
 
   // ── Mesh boolean ───────────────────────────────────────────────
 
   /** Boolean on raw triangle data. Returns BrepkitMesh. */
   meshBoolean(
-    positionsA: number[],
-    indicesA: number[],
-    positionsB: number[],
-    indicesB: number[],
+    positionsA: Float64Array | number[],
+    indicesA: Uint32Array | number[],
+    positionsB: Float64Array | number[],
+    indicesB: Uint32Array | number[],
     op: string,
     tolerance: number
   ): BrepkitMesh;
 
   // ── Copy sub-shapes ────────────────────────────────────────────
 
-  /** Deep copy an edge. Returns new edge handle. */
+  /** @future Not in brepkit-wasm 2.5.0. Deep copy an edge. Returns new edge handle. */
   copyEdge?(edge: number): number;
 
-  /** Deep copy a face. Returns new face handle. */
+  /** @future Not in brepkit-wasm 2.5.0. Deep copy a face. Returns new face handle. */
   copyFace?(face: number): number;
 
-  /** Transform an edge in-place. */
-  transformEdge?(edge: number, matrix: number[]): void;
+  /** @future Not in brepkit-wasm 2.5.0. Transform an edge in-place. */
+  transformEdge?(edge: number, matrix: Float64Array | number[]): void;
 
-  /** Transform a face in-place. */
-  transformFace?(face: number, matrix: number[]): void;
+  /** @future Not in brepkit-wasm 2.5.0. Transform a face in-place. */
+  transformFace?(face: number, matrix: Float64Array | number[]): void;
 
   // ── Sketch ─────────────────────────────────────────────────────
 
@@ -774,7 +790,12 @@ export interface BrepkitKernel {
   assemblyNew(name: string): number;
 
   /** Add a root component. Returns component ID. */
-  assemblyAddRoot(assembly: number, name: string, solid: number, matrix: number[]): number;
+  assemblyAddRoot(
+    assembly: number,
+    name: string,
+    solid: number,
+    matrix: Float64Array | number[]
+  ): number;
 
   /** Add a child component. Returns component ID. */
   assemblyAddChild(
@@ -782,7 +803,7 @@ export interface BrepkitKernel {
     parent: number,
     name: string,
     solid: number,
-    matrix: number[]
+    matrix: Float64Array | number[]
   ): number;
 
   /** Flatten assembly to JSON `[{solid, matrix}, ...]`. */
@@ -794,7 +815,11 @@ export interface BrepkitKernel {
   // ── 2D polygon ─────────────────────────────────────────────────
 
   /** Offset a 2D polygon. Coords are flat `[x,y, ...]`. Returns flat coords. */
-  offsetPolygon2d(coords: number[], distance: number, tolerance: number): number[];
+  offsetPolygon2d(
+    coords: Float64Array | number[],
+    distance: number,
+    tolerance: number
+  ): Float64Array;
 
   // Note: The following 2D methods return Float64Array from WASM. Callers must
   // convert via Array.from() before passing downstream (same as Uint32Array pattern).
@@ -806,7 +831,7 @@ export interface BrepkitKernel {
   fillet2d(coords: number[], radius: number): Float64Array;
 
   /** Check if a point is inside a 2D polygon. Coords flat `[x,y,...]`. */
-  pointInPolygon2d?(x: number, y: number, coords: number[]): boolean;
+  pointInPolygon2d?(polygonCoords: Float64Array | number[], px: number, py: number): boolean;
 
   /** Check if two 2D polygons intersect. Coords flat `[x,y,...]`. */
   polygonsIntersect2d(coordsA: number[], coordsB: number[]): boolean;
@@ -892,28 +917,28 @@ export interface BrepkitKernel {
   // ── Sketch ────────────────────────────────────────────────────
 
   /** Get degrees of freedom remaining in a sketch. */
-  sketchDof(sketch: number): number;
+  sketchDof(sketch: number): string;
 
   // ── Not yet exposed (future PRs) ──────────────────────────────
 
-  /** Classify a point on a face (trim-aware). (Theme G) */
+  /** @future Not in brepkit-wasm 2.5.0. Classify a point on a face (trim-aware). */
   classifyPointOnFace?(face: number, u: number, v: number, tolerance: number): number;
 
-  /** Distance between two arbitrary shapes. (Theme G) */
+  /** @future Not in brepkit-wasm 2.5.0. Distance between two arbitrary shapes. */
   shapeToShapeDistance?(id1: number, id2: number): number[];
 
-  /** 2D curve intersection. (Theme F) */
+  /** @future Not in brepkit-wasm 2.5.0. 2D curve intersection. */
   intersectCurves2d?(...args: number[]): number[];
 
-  /** Project point onto 2D curve. (Theme F) */
+  /** @future Not in brepkit-wasm 2.5.0. Project point onto 2D curve. */
   projectPointOnCurve2d?(...args: number[]): number[];
 
-  /** Reverse a 2D curve. (Theme F) */
+  /** @future Not in brepkit-wasm 2.5.0. Reverse a 2D curve. */
   reverseCurve2d?(...args: number[]): number[];
 
   /** Lift a serialised 2D curve onto a 3D plane. Returns edge handle. Added in 2.1.0. */
   liftCurve2dToPlane?(
-    curveType: string,
+    curveType: number,
     curveParams: Float64Array,
     originX: number,
     originY: number,

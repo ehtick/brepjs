@@ -148,11 +148,11 @@ export function extractPlaneFromFace(
   } else {
     faceId = unwrap(faceShape, 'face');
   }
-  const n: number[] = bk.getFaceNormal(faceId);
+  const n = bk.getFaceNormal(faceId);
   const normal: [number, number, number] = [n[0]!, n[1]!, n[2]!];
 
   const mesh = bk.tessellateFace(faceId, 1.0);
-  const positions: number[] = mesh.positions;
+  const positions = mesh.positions;
   if (positions.length >= 3) {
     return { point: [positions[0]!, positions[1]!, positions[2]!], normal };
   }
@@ -183,7 +183,7 @@ export function extractNurbsFromEdge(
     };
   }
 
-  const verts: number[] = bk.getEdgeVertices(h.id);
+  const verts = bk.getEdgeVertices(h.id);
   return {
     degree: 1,
     knots: [0, 0, 1, 1],
