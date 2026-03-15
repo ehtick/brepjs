@@ -111,6 +111,7 @@ import type {
   // Measurement
   InterferenceResult,
   CurvatureResult,
+  DistanceProps,
 
   // Projection
   Camera,
@@ -308,7 +309,6 @@ const EXPECTED_RUNTIME_EXPORTS: readonly string[] = [
   'fill',
   'filledFace',
   'fillet',
-  'findCurveType',
   'findFacesByTag',
   'findNode',
   'findStep',
@@ -430,6 +430,7 @@ const EXPECTED_RUNTIME_EXPORTS: readonly string[] = [
   'measureCurvatureAt',
   'measureCurvatureAtMid',
   'measureDistance',
+  'measureDistanceProps',
   'measureLength',
   'measureLinearProps',
   'measureSurfaceProps',
@@ -504,8 +505,6 @@ const EXPECTED_RUNTIME_EXPORTS: readonly string[] = [
   'sharedEdges',
   'shell',
   'simplify',
-  'sketch2DOnFace',
-  'sketch2DOnPlane',
   'sketchCircle',
   'sketchEllipse',
   'sketchExtrude',
@@ -513,6 +512,8 @@ const EXPECTED_RUNTIME_EXPORTS: readonly string[] = [
   'sketchFaceOffset',
   'sketchHelix',
   'sketchLoft',
+  'sketchOnFace2D',
+  'sketchOnPlane2D',
   'sketchParametricFunction',
   'sketchPolysides',
   'sketchRectangle',
@@ -1003,6 +1004,19 @@ describe('Type structures — runtime field verification', () => {
       expect(r.minDistance).toBe(5.0);
       expect(r.pointOnShape1).toEqual([0, 0, 0]);
       expect(r.pointOnShape2).toEqual([5, 0, 0]);
+    });
+  });
+
+  describe('DistanceProps', () => {
+    it('has distance, point1, point2', () => {
+      const d: DistanceProps = {
+        distance: 5.0,
+        point1: [0, 0, 0],
+        point2: [5, 0, 0],
+      };
+      expect(d.distance).toBe(5.0);
+      expect(d.point1).toEqual([0, 0, 0]);
+      expect(d.point2).toEqual([5, 0, 0]);
     });
   });
 

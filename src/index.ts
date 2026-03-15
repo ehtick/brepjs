@@ -19,18 +19,23 @@ export type {
   ShapeType,
   // Kernel sub-interfaces (ADR-0007)
   KernelBooleanOps,
-  KernelConstructionOps,
+  KernelBuilderOps,
   KernelCore,
+  KernelCurveOps,
   KernelEvolutionOps,
-  KernelGeometryOps,
   KernelIOOps,
   KernelMeasureOps,
   KernelMeshOps,
   KernelModifierOps,
+  KernelPrimitiveOps,
   KernelRepairOps,
+  KernelSurfaceOps,
   KernelSweepOps,
   KernelTopologyOps,
   KernelTransformOps,
+  // Backward-compatible aliases
+  KernelConstructionOps,
+  KernelGeometryOps,
 } from './kernel/index.js';
 export { supportsProjection, supportsConstraintSketch } from './kernel/index.js';
 export type { ProjectionCapability, ConstraintSketchCapability } from './kernel/index.js';
@@ -99,8 +104,7 @@ export { type Deletable } from './core/disposal.js';
 
 export { makePlane } from './core/planeOps.js';
 
-export { findCurveType } from './core/definitionMaps.js';
-export type { CurveType } from './core/definitionMaps.js';
+export type { CurveType } from './core/typeDiscriminants.js';
 
 // ── Layer 2: topology (via barrel) ──
 
@@ -126,9 +130,6 @@ export {
 } from './topology/index.js';
 
 // ── Layer 2: operations ──
-
-// Legacy OO API — deprecated, use extrude/revolve/sweep from functional API
-// export { basicFaceExtrusion, revolution, genericSweep, type GenericSweepOptions } from './operations/extrude.js';
 
 export { type AssemblyExporter, createAssembly } from './operations/exporters.js';
 
@@ -177,8 +178,8 @@ export {
   mirror2D,
   stretch2D,
   // Sketching - clean 2D aliases
-  sketch2DOnPlane,
-  sketch2DOnFace,
+  sketchOnPlane2D,
+  sketchOnFace2D,
 } from './2d/blueprints/blueprintFns.js';
 
 // ── Layer 2: query ──
@@ -248,10 +249,10 @@ export {
   drawText,
   drawPointsInterpolation,
   drawParametricFunction,
-  drawProjection,
-  drawFaceOutline,
   deserializeDrawing,
 } from './sketching/draw.js';
+
+export { drawProjection, drawFaceOutline } from './sketching/draw3d.js';
 
 export type { DrawingInterface, SketchData } from './2d/blueprints/lib.js';
 
@@ -474,10 +475,15 @@ export {
   getFaceTags,
   setTagMetadata,
   getTagMetadata,
-} from './topology/faceTagFns.js';
+} from './topology/metadata/faceTagFns.js';
 
-export { colorFaces, colorShape, getFaceColor, getShapeColor } from './topology/colorFns.js';
-export type { Color, ColorInput } from './topology/colorFns.js';
+export {
+  colorFaces,
+  colorShape,
+  getFaceColor,
+  getShapeColor,
+} from './topology/metadata/colorFns.js';
+export type { Color, ColorInput } from './topology/metadata/colorFns.js';
 
 export { chamferDistAngle as chamferDistAngleShape } from './topology/chamferAngleFns.js';
 
@@ -672,6 +678,7 @@ export {
   measureArea,
   measureLength,
   measureDistance,
+  measureDistanceProps,
   createDistanceQuery,
   measureVolumeProps,
   measureSurfaceProps,
@@ -680,6 +687,7 @@ export {
   type VolumeProps,
   type SurfaceProps,
   type LinearProps,
+  type DistanceProps,
   measureCurvatureAt,
   measureCurvatureAtMid,
   type CurvatureResult,

@@ -10,8 +10,6 @@ export {
   shapeType,
   iterTopo,
   asTopo,
-  isShape3D,
-  isWire,
   isCompSolid,
   fromBREP as deserializeShape,
   type TopoEntity,
@@ -35,7 +33,7 @@ export {
 
 // ── Re-export domain types from functional modules ──
 
-export type { CurveType } from '../core/definitionMaps.js';
+export type { CurveType } from '../core/typeDiscriminants.js';
 
 // ── Functional API ──
 

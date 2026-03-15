@@ -27,7 +27,6 @@ import { fillet } from 'brepjs/topology';
 | `autoHeal`                    | `brepjs/topology`    | function |
 | `AutoHealOptions`             | `brepjs/topology`    | type     |
 | `BaseSketcher2d`              | `brepjs/sketching`   | class    |
-| `basicFaceExtrusion`          | `brepjs/operations`  | function |
 | `bezier`                      | `brepjs/topology`    | function |
 | `Blueprint`                   | `brepjs/2d`          | class    |
 | `Blueprints`                  | `brepjs/2d`          | class    |
@@ -180,8 +179,6 @@ import { fillet } from 'brepjs/topology';
 | `fuse2D`                      | `brepjs/2d`          | function |
 | `fuseAll`                     | `brepjs/topology`    | function |
 | `fuseBlueprints`              | `brepjs/2d`          | function |
-| `genericSweep`                | `brepjs/operations`  | function |
-| `GenericSweepOptions`         | `brepjs/operations`  | type     |
 | `GenericTopo`                 | `brepjs/topology`    | type     |
 | `getBounds`                   | `brepjs/topology`    | function |
 | `getCurveType`                | `brepjs/topology`    | function |
@@ -317,7 +314,6 @@ import { fillet } from 'brepjs/topology';
 | `resolvePlane`                | `brepjs/core`        | function |
 | `Result`                      | `brepjs/core`        | type     |
 | `reverseCurve`                | `brepjs/2d`          | function |
-| `revolution`                  | `brepjs/operations`  | function |
 | `rotate2D`                    | `brepjs/2d`          | function |
 | `rotateDrawing`               | `brepjs/sketching`   | function |
 | `roundedRectangleBlueprint`   | `brepjs/2d`          | function |
@@ -333,8 +329,8 @@ import { fillet } from 'brepjs/topology';
 | `sharedEdges`                 | `brepjs/topology`    | function |
 | `SingleFace`                  | `brepjs/query`       | type     |
 | `Sketch`                      | `brepjs/sketching`   | class    |
-| `sketch2DOnFace`              | `brepjs/2d`          | function |
-| `sketch2DOnPlane`             | `brepjs/2d`          | function |
+| `sketchOnFace2D`              | `brepjs/2d`          | function |
+| `sketchOnPlane2D`             | `brepjs/2d`          | function |
 | `sketchCircle`                | `brepjs/sketching`   | function |
 | `sketchEllipse`               | `brepjs/sketching`   | function |
 | `Sketcher`                    | `brepjs/sketching`   | class    |
@@ -448,13 +444,13 @@ import { fillet } from 'brepjs/topology';
 
 ## `brepjs/operations`
 
-**Functions** (34): `addChild`, `addStep`, `basicFaceExtrusion`, `circularPattern`, `collectShapes`, `complexExtrude`, `countNodes`, `createAssembly`, `createAssemblyNode`, `createHistory`, `createRegistry`, `exportAssemblySTEP`, `findNode`, `findStep`, `genericSweep`, `getHistoryShape`, `gridPattern`, `linearPattern`, `loft`, `modifyStep`, `registerOperation`, `registerShape`, `removeChild`, `replayFrom`, `replayHistory`, `revolution`, `stepCount`, `stepsFrom`, `supportExtrude`, `sweep`, `twistExtrude`, `undoLast`, `updateNode`, `walkAssembly`
+**Functions** (31): `addChild`, `addStep`, `circularPattern`, `collectShapes`, `complexExtrude`, `countNodes`, `createAssembly`, `createAssemblyNode`, `createHistory`, `createRegistry`, `exportAssemblySTEP`, `findNode`, `findStep`, `getHistoryShape`, `gridPattern`, `linearPattern`, `loft`, `modifyStep`, `registerOperation`, `registerShape`, `removeChild`, `replayFrom`, `replayHistory`, `stepCount`, `stepsFrom`, `supportExtrude`, `sweep`, `twistExtrude`, `undoLast`, `updateNode`, `walkAssembly`
 
-**Types** (12): `AssemblyExporter`, `AssemblyNode`, `AssemblyNodeOptions`, `ExtrusionProfile`, `GenericSweepOptions`, `HistoryOperationRegistry`, `ModelHistory`, `OperationFn`, `OperationStep`, `ShapeOptions`, `SupportedUnit`, `SweepOptions`
+**Types** (11): `AssemblyExporter`, `AssemblyNode`, `AssemblyNodeOptions`, `ExtrusionProfile`, `HistoryOperationRegistry`, `ModelHistory`, `OperationFn`, `OperationStep`, `ShapeOptions`, `SupportedUnit`, `SweepOptions`
 
 ## `brepjs/2d`
 
-**Functions** (29): `createBlueprint`, `curve2dBoundingBox`, `curve2dDistanceFrom`, `curve2dFirstPoint`, `curve2dIsOnCurve`, `curve2dLastPoint`, `curve2dParameter`, `curve2dSplitAt`, `curve2dTangentAt`, `cut2D`, `cutBlueprints`, `fuse2D`, `fuseBlueprints`, `getOrientation2D`, `intersect2D`, `intersectBlueprints`, `isInside2D`, `mirror2D`, `organiseBlueprints`, `polysidesBlueprint`, `reverseCurve`, `rotate2D`, `roundedRectangleBlueprint`, `scale2D`, `sketch2DOnFace`, `sketch2DOnPlane`, `stretch2D`, `toSVGPathD`, `translate2D`
+**Functions** (29): `createBlueprint`, `curve2dBoundingBox`, `curve2dDistanceFrom`, `curve2dFirstPoint`, `curve2dIsOnCurve`, `curve2dLastPoint`, `curve2dParameter`, `curve2dSplitAt`, `curve2dTangentAt`, `cut2D`, `cutBlueprints`, `fuse2D`, `fuseBlueprints`, `getOrientation2D`, `intersect2D`, `intersectBlueprints`, `isInside2D`, `mirror2D`, `organiseBlueprints`, `polysidesBlueprint`, `reverseCurve`, `rotate2D`, `roundedRectangleBlueprint`, `scale2D`, `sketchOnFace2D`, `sketchOnPlane2D`, `stretch2D`, `toSVGPathD`, `translate2D`
 
 **Classes** (5): `Blueprint`, `Blueprints`, `BoundingBox2d`, `CompoundBlueprint`, `Curve2D`
 

@@ -887,12 +887,6 @@ declare function makePlane(plane?: PlaneName, origin?: PointInput | number): Pla
 /** Discriminant for the geometric type of a 3D curve. */
 type CurveType = 'LINE' | 'CIRCLE' | 'ELLIPSE' | 'HYPERBOLA' | 'PARABOLA' | 'BEZIER_CURVE' | 'BSPLINE_CURVE' | 'OFFSET_CURVE' | 'OTHER_CURVE';
 
-/**
- * Map a kernel curve type enum value to its string discriminant.
- *
- * @returns `Ok<CurveType>` on success, or `Err` if the enum value is unrecognised.
- */
-declare const findCurveType: (type: any) => Result<CurveType>;
 
 /** String literal identifying a topological entity type for TopExp_Explorer iteration. */
 type TopoEntity = 'vertex' | 'edge' | 'wire' | 'face' | 'shell' | 'solid' | 'solidCompound' | 'compound' | 'shape';
@@ -990,32 +984,6 @@ interface CurveLike {
     D1(v: number, p: KernelType, vPrime: KernelType): void;
 }
 
-/**
- * Extrude a face along a vector to produce a solid (OOP API).
- *
- * @param face - The planar face to extrude.
- * @param extrusionVec - Direction and magnitude of the extrusion.
- * @returns A new Solid created by the linear extrusion.
- *
- * @see {@link extrudeFns!extrude | extrude} for the functional API equivalent.
- */
-declare const basicFaceExtrusion: (face: OrientedFace, extrusionVec: PointInput) => Solid;
-
-/**
- * Revolve a face around an axis to create a solid of revolution (OOP API).
- *
- * @param face - The face to revolve.
- * @param center - A point on the rotation axis. Defaults to the origin.
- * @param direction - Direction vector of the rotation axis. Defaults to Z-up.
- * @param angle - Rotation angle in degrees (0-360). Defaults to a full revolution.
- * @returns `Result` containing the revolved 3D shape, or an error if the result is not 3D.
- *
- * @see {@link extrudeFns!revolve | revolve} for the functional API equivalent.
- */
-declare const revolution: (face: OrientedFace, center?: PointInput, direction?: PointInput, angle?: number) => Result<Shape3D>;
-
-declare function genericSweep(wire: Wire, spine: Wire, sweepConfig: GenericSweepOptions, shellMode: true): Result<[Shape3D, Wire, Wire]>;
-declare function genericSweep(wire: Wire, spine: Wire, sweepConfig: GenericSweepOptions, shellMode?: false): Result<Shape3D>;
 
 /** Disposable handle wrapping an XCAF document for STEP assembly export. */
 type AssemblyExporter = KernelHandle<KernelType>;
@@ -1442,10 +1410,10 @@ declare function mirror2D(bp: Blueprint, centerOrDirection: Point2D, origin?: Po
 declare function stretch2D(bp: Blueprint, ratio: number, direction: Point2D, origin?: Point2D): Blueprint;
 
 /** Project a blueprint onto a 3D plane, producing sketch data. */
-declare function sketch2DOnPlane(bp: Blueprint, inputPlane?: PlaneName | Plane, origin?: PointInput | number): any;
+declare function sketchOnPlane2D(bp: Blueprint, inputPlane?: PlaneName | Plane, origin?: PointInput | number): any;
 
 /** Map a blueprint onto a 3D face's UV surface, producing sketch data. */
-declare function sketch2DOnFace(bp: Blueprint, face: Face, scaleMode?: ScaleMode): any;
+declare function sketchOnFace2D(bp: Blueprint, face: Face, scaleMode?: ScaleMode): any;
 
 /**
  * Input that resolves to a single face — a direct Face, a FaceFinderFn,
@@ -2631,7 +2599,7 @@ declare function sketchLoft(sketch: Sketch, otherSketches: Sketch | Sketch[], lo
  *
  * @see {@link Sketch.sweepSketch} for the OOP equivalent.
  */
-declare function sketchSweep(sketch: Sketch, sketchOnPlane: Parameters<Sketch['sweepSketch']>[0], sweepConfig?: GenericSweepOptions): Shape3D;
+declare function sketchSweep(sketch: Sketch, sketchOnPlane: Parameters<Sketch['sweepSketch']>[0], sweepConfig?: SweepOptions): Shape3D;
 
 /**
  * Build a face from a sketch's closed wire.
@@ -6561,7 +6529,7 @@ declare class Sketch implements SketchInterface {
      * Sweep along this sketch another sketch defined in the function
      * `sketchOnPlane`.
      */
-    sweepSketch(sketchOnPlane: (plane: Plane, origin: Vec3) => this, sweepConfig?: GenericSweepOptions): Shape3D;
+    sweepSketch(sketchOnPlane: (plane: Plane, origin: Vec3) => this, sweepConfig?: SweepOptions): Shape3D;
     /** Loft between this sketch and another sketch (or an array of them)
      *
      * You can also define a `startPoint` for the loft (that will be placed
@@ -6974,11 +6942,6 @@ interface SurfaceFromImageOptions extends SurfaceFromGridOptions {
     downsample?: number;
 }
 
-/** Configuration for sweep operations in the OO API. */
-interface GenericSweepOptions extends SweepOptions {
-    /** Auxiliary spine for twist control (Wire or Edge in OO API) */
-    auxiliarySpine?: Wire | Edge;
-}
 
 /** Volume properties with a domain-specific `volume` alias. */
 interface VolumeProps extends PhysicalProps {
