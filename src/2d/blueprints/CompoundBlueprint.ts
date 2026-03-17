@@ -1,5 +1,6 @@
 import type { Point2D } from '../lib/index.js';
 import { BoundingBox2d } from '../lib/index.js';
+import { firstOrThrow } from '../../utils/arrayAccess.js';
 import type Blueprint from './Blueprint.js';
 import type { DrawingInterface, SketchData } from './lib.js';
 import { asSVG, viewbox } from './svg.js';
@@ -68,8 +69,7 @@ export default class CompoundBlueprint implements DrawingInterface {
     return [
       'Compound Blueprints',
       '-- Outline',
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- compound always has outer boundary
-      this.blueprints[0]!.repr,
+      firstOrThrow(this.blueprints).repr,
       '-- Holes',
       ...this.blueprints.slice(1).map((b) => b.repr),
     ].join('\n');
@@ -96,8 +96,11 @@ export default class CompoundBlueprint implements DrawingInterface {
   translate(translationVector: Point2D): CompoundBlueprint;
   translate(xDistOrPoint: number | Point2D, yDist = 0): CompoundBlueprint {
     return new CompoundBlueprint(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- overloaded translate call
-      this.blueprints.map((bp) => bp.translate(xDistOrPoint as any, yDist))
+      this.blueprints.map((bp) =>
+        typeof xDistOrPoint === 'number'
+          ? bp.translate(xDistOrPoint, yDist)
+          : bp.translate(xDistOrPoint)
+      )
     );
   }
 
@@ -142,8 +145,7 @@ export default class CompoundBlueprint implements DrawingInterface {
       draftAngle?: number;
     } = {}
   ): AnyShape<Dimension> {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- compound always has outer boundary
-    return this.blueprints[0]!.punchHole(shape, face, options);
+    return firstOrThrow(this.blueprints).punchHole(shape, face, options);
   }
 
   /** Compute the SVG `viewBox` attribute for this compound blueprint. */
