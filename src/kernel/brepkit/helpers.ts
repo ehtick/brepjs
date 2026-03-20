@@ -40,12 +40,7 @@ export const noop = () => {};
 
 /** Type guard: is this shape a brepkit handle? */
 export function isBrepkitHandle(shape: unknown): shape is BrepkitHandle {
-  return (
-    shape !== null &&
-    shape !== undefined &&
-    typeof shape === 'object' &&
-    (shape as BrepkitHandle).__brepkit
-  );
+  return typeof shape === 'object' && shape !== null && (shape as BrepkitHandle).__brepkit;
 }
 
 export function handle(type: ShapeType, id: number): BrepkitHandle {
@@ -311,7 +306,7 @@ export const DEFAULT_SEGMENTS = 32;
  * Counter for synthetic compound IDs (non-solid compounds stored JS-side).
  * Starts high to avoid colliding with WASM arena indices.
  */
-export let syntheticCompoundCounter = 900_000;
+let syntheticCompoundCounter = 900_000;
 
 /** Increment and return the synthetic compound counter. */
 export function nextSyntheticId(): number {
