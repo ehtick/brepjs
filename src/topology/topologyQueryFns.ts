@@ -14,7 +14,7 @@ import type {
   Vertex,
   ShapeKind,
 } from '@/core/shapeTypes.js';
-import { castShapeWithKnownType, getShapeKind } from '@/core/shapeTypes.js';
+import { castShapeWithKnownType } from '@/core/shapeTypes.js';
 import type { Vec3 } from '@/core/types.js';
 
 // ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ function castSubShapes<T>(parentShape: KernelShape, type: ShapeType): T[] {
 // Shared topology cache
 // ---------------------------------------------------------------------------
 
-/** @internal Cache entry type — exported for originTrackingFns. */
+/** @internal Cache entry type — exported for originTrackingFns and adjacencyFns. */
 export interface TopoCacheEntry {
   edges?: Edge<Dimension>[];
   faces?: Face<Dimension>[];
@@ -48,6 +48,10 @@ export interface TopoCacheEntry {
   vertices?: Vertex<Dimension>[];
   faceOrigins?: Map<number, number>;
   bounds?: Bounds3D;
+  shapeKind?: ShapeKind;
+  /** Edge hash → edge-face pairs for adjacency queries. Stores the edge alongside
+   *  each face so facesOfEdge can verify via isSame without re-extracting face edges. */
+  edgeToFaces?: Map<number, Array<{ edge: KernelShape; face: KernelShape }>>;
 }
 
 const topoCache = new WeakMap<object, TopoCacheEntry>();
@@ -184,6 +188,19 @@ export function getBounds(shape: AnyShape<Dimension>): Bounds3D {
 }
 
 // ---------------------------------------------------------------------------
+// Cached shape kind
+// ---------------------------------------------------------------------------
+
+/** Get the topological kind of a shape. Cached per shape. */
+export function getCachedShapeKind(shape: AnyShape<Dimension>): ShapeKind {
+  const cache = getOrCreateCache(shape);
+  if (cache.shapeKind !== undefined) return cache.shapeKind;
+  const kind = getKernel().shapeType(shape.wrapped);
+  cache.shapeKind = kind;
+  return kind;
+}
+
+// ---------------------------------------------------------------------------
 // Shape description
 // ---------------------------------------------------------------------------
 
@@ -201,7 +218,7 @@ export interface ShapeDescription {
 /** Get a quick summary of a shape for debugging and inspection. */
 export function describe(shape: AnyShape<Dimension>): ShapeDescription {
   return {
-    kind: getShapeKind(shape),
+    kind: getCachedShapeKind(shape),
     faceCount: getFaces(shape).length,
     edgeCount: getEdges(shape).length,
     wireCount: getWires(shape).length,
