@@ -1,7 +1,7 @@
 # ADR-0005: Topological Validity Phantom Types
 
-**Status**: Implemented
-**Date**: 2026-03-08
+**Status**: Implemented (Phases 1–3b complete, Phase 4 partially complete, Phase 5 see ADR-0011)
+**Date**: 2026-03-08 (updated 2026-03-20)
 
 ## Context
 
@@ -168,35 +168,61 @@ Update functions that produce known-valid shapes to return branded types:
 - `makeFace()` → `OrientedFace` (faces are always oriented)
 - `sewShells()` → conditional `ManifoldShell` or `Shell`
 
-### Phase 3: Consumer Updates (Breaking)
+### Phase 3: Consumer Updates (Breaking) — ClosedWire & OrientedFace ✅ Complete
 
 Updated operation signatures to _require_ validity brands at call sites:
 
 **Wire → ClosedWire** (face construction requires closed boundary):
 
-- `face(w: ClosedWire)`, `filledFace(w: ClosedWire)`, `subFace(f, w: ClosedWire)`, `addHoles(f, holes: ClosedWire[])`
-- `makeFace(wire: ClosedWire)`, `makeNonPlanarFace(wire: ClosedWire)`, `makeNewFaceWithinFace(f, wire: ClosedWire)`
-- `addHolesInFace(f, holes: ClosedWire[])`
+- ✅ `face(w: ClosedWire)`, `filledFace(w: ClosedWire)`, `subFace(f, w: ClosedWire)`, `addHoles(f, holes: ClosedWire[])`
+- ✅ `makeFace(wire: ClosedWire)`, `makeNonPlanarFace(wire: ClosedWire)`, `makeNewFaceWithinFace(f, wire: ClosedWire)`
+- ✅ `addHolesInFace(f, holes: ClosedWire[])`
+- ✅ `sweep(wire: ClosedWire, ...)`, `supportExtrude(wire: ClosedWire, ...)`, `complexExtrude(wire: ClosedWire, ...)`, `twistExtrude(wire: ClosedWire, ...)`
+- ✅ `roof(w: ClosedWire, ...)`
 
 **Face → OrientedFace** (extrusion/revolution requires oriented face):
 
-- `extrude(face: OrientedFace)`, `revolve(face: OrientedFace)`
-- `basicFaceExtrusion(face: OrientedFace)`, `revolution(face: OrientedFace)` (OOP API)
-- Public `api.extrude(face: OrientedFace)`, `api.revolve(face: OrientedFace)`
+- ✅ `extrude(face: OrientedFace)`, `revolve(face: OrientedFace)`
+- ✅ `measureCurvatureAt(face: OrientedFace, ...)`
 
 Internal call sites (Sketch, CompoundSketch, Blueprint, draw, booleanFns, compoundOpsFns) cast with `as ClosedWire`/`as OrientedFace` where the invariant is known to hold by construction.
 
-### Phase 4: Convenience & Propagation
+### Phase 3b: Consumer Updates — ValidSolid ✅ Complete
 
-- `wireLoop(edges)` — assemble + closure check in one step, returns `Result<ClosedWire>`
-- `solid(facesOrShells)` / `makeSolid()` → `Result<ValidSolid>` (was `Result<Solid>`)
+Require `ValidSolid` on operations that fail or produce garbage on invalid solids:
+
+**Solid → ValidSolid** (boolean ops require valid operands):
+
+- `fuse(a: ValidSolid, b: ValidSolid)`, `cut(base: ValidSolid, tool: ValidSolid)`, `intersect(a: ValidSolid, b: ValidSolid)`
+- `fillet(shape: ValidSolid, ...)`, `chamfer(shape: ValidSolid, ...)`, `shell(shape: ValidSolid, ...)`, `offset(shape: ValidSolid, ...)`
+
+**Note**: These functions currently accept `Shape3D` (union of Shell, Solid, CompSolid, Compound). Phase 3b uses TypeScript overloads: the primary signature requires `ValidSolid`; a secondary overload accepts `Shape3D` when the caller passes `{ unsafe: true }` in options. This preserves the existing `Shape3D` path for advanced users (e.g., operating on shells directly) while making `ValidSolid` the default.
+
+Batch variants `fuseAll` and `cutAll` follow the same overload pattern.
+
+**Producer updates** (return `ValidSolid` where valid by construction):
+
+- `fuse`, `cut`, `intersect`, `fuseAll`, `cutAll` → `Result<ValidSolid>` (valid input ⇒ valid output)
+- `roof()` → `Result<ValidSolid>` (roof always produces valid solids)
+- `fillet`, `chamfer`, `draft` → `Result<ValidSolid>` (kernel preserves validity)
+
+### Phase 4: Convenience & Propagation ✅ Partially Complete
+
+- ✅ `wireLoop(edges)` — assemble + closure check in one step, returns `Result<ClosedWire>`
+- ✅ `solid(facesOrShells)` / `makeSolid()` → `Result<ValidSolid>` (was `Result<Solid>`)
 - Transforms (`translate`, `rotate`, `mirror`, `scale`) preserve brands via `<T extends AnyShape<D>>` generics
 - `fillet`, `chamfer`, `shell` (api layer) preserve brands via `<T extends Shape3D>` generics
 - `Sketch.wire` stays as `Wire` (sketches serve as both closed profiles and open sweep paths)
+
+### Phase 5: Geometric Validity Brands ✅ Complete
+
+See ADR-0011 for `PlanarFace`/`PlanarWire` brands that encode geometric (not just topological) invariants.
 
 ## Related
 
 - ADR-0003: Branded types (foundation pattern)
 - ADR-0004: Phantom dimension types (extends the same pattern)
-- `src/core/shapeTypes.ts` — implementation location
+- ADR-0011: Geometric validity brands (PlanarFace/PlanarWire)
+- `src/core/validityTypes.ts` — validity type definitions
+- `src/core/shapeTypes.ts` — shape type definitions and re-exports
 - `src/topology/healingFns.ts` — validation infrastructure

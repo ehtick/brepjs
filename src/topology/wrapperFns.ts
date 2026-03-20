@@ -27,7 +27,9 @@ import type {
   Solid,
   Vertex,
   Shape3D,
+  ValidSolid,
 } from '@/core/shapeTypes.js';
+import type { PlanarFace } from '@/core/validityTypes.js';
 import { isShape3D, isFace, isEdge, isWire } from '@/core/shapeTypes.js';
 import type {
   Shapeable,
@@ -346,16 +348,45 @@ function createWrapped3D<T extends Shape3D>(val: T): Wrapped3D<T> {
   const self: Wrapped3D<T> = {
     ...base,
 
-    // Booleans — cast through unknown to satisfy generic constraint
-    fuse: (tool, opts) => wrap3D(unwrapOrThrow(fuse(val, resolve(tool), opts)) as unknown as T),
-    cut: (tool, opts) => wrap3D(unwrapOrThrow(cut(val, resolve(tool), opts)) as unknown as T),
+    // Booleans — legacy OOP wrappers use unsafe to bypass ValidSolid requirement
+    fuse: (tool, opts) =>
+      wrap3D(
+        unwrapOrThrow(
+          fuse(val, resolve(tool), { ...opts, unsafe: true } as BooleanOptions & { unsafe: true })
+        ) as unknown as T
+      ),
+    cut: (tool, opts) =>
+      wrap3D(
+        unwrapOrThrow(
+          cut(val, resolve(tool), { ...opts, unsafe: true } as BooleanOptions & { unsafe: true })
+        ) as unknown as T
+      ),
     intersect: (tool, opts) =>
-      wrap3D(unwrapOrThrow(intersect(val, resolve(tool), opts)) as unknown as T),
+      wrap3D(
+        unwrapOrThrow(
+          intersect(val, resolve(tool), {
+            ...opts,
+            unsafe: true,
+          } as BooleanOptions & { unsafe: true })
+        ) as unknown as T
+      ),
 
-    // Batch booleans
+    // Batch booleans — legacy OOP wrappers use unsafe to bypass ValidSolid requirement
     fuseAll: (tools, opts) =>
-      wrap3D(unwrapOrThrow(fuseAllFn([val, ...tools.map(resolve)], opts)) as unknown as T),
-    cutAll: (tools, opts) => wrap3D(unwrapOrThrow(cutAllFn(val, tools, opts)) as unknown as T),
+      wrap3D(
+        unwrapOrThrow(
+          fuseAllFn([val, ...tools.map(resolve)], {
+            ...opts,
+            unsafe: true,
+          } as BooleanOptions & { unsafe: true })
+        ) as unknown as T
+      ),
+    cutAll: (tools, opts) =>
+      wrap3D(
+        unwrapOrThrow(
+          cutAllFn(val, tools, { ...opts, unsafe: true } as BooleanOptions & { unsafe: true })
+        ) as unknown as T
+      ),
 
     // Boolean variants — wrappers are always 3D context, safe to narrow
     section: (plane, opts) => wrapAny(unwrapOrThrow(sectionFn(val, plane, opts)) as AnyShape),
@@ -366,23 +397,40 @@ function createWrapped3D<T extends Shape3D>(val: T): Wrapped3D<T> {
     fillet(
       ...args: [FilletRadius] | [Edge[] | FinderFn<Edge> | ShapeFinder<Edge>, FilletRadius]
     ): Wrapped3D<T> {
+      // brepjs-patterns-disable: no-double-cast
       if (args.length === 1) {
-        return wrap3D(unwrapOrThrow(fillet(val, args[0])) as unknown as T);
+        return wrap3D(unwrapOrThrow(fillet(val as unknown as ValidSolid, args[0])) as unknown as T);
       }
-      return wrap3D(unwrapOrThrow(fillet(val, args[0], args[1])) as unknown as T);
+      // brepjs-patterns-disable: no-double-cast
+      return wrap3D(
+        unwrapOrThrow(fillet(val as unknown as ValidSolid, args[0], args[1])) as unknown as T
+      );
     },
     chamfer(
       ...args: [ChamferDistance] | [Edge[] | FinderFn<Edge> | ShapeFinder<Edge>, ChamferDistance]
     ): Wrapped3D<T> {
+      // brepjs-patterns-disable: no-double-cast
       if (args.length === 1) {
-        return wrap3D(unwrapOrThrow(chamfer(val, args[0])) as unknown as T);
+        return wrap3D(
+          unwrapOrThrow(chamfer(val as unknown as ValidSolid, args[0])) as unknown as T
+        );
       }
-      return wrap3D(unwrapOrThrow(chamfer(val, args[0], args[1])) as unknown as T);
+      // brepjs-patterns-disable: no-double-cast
+      return wrap3D(
+        unwrapOrThrow(chamfer(val as unknown as ValidSolid, args[0], args[1])) as unknown as T
+      );
     },
+    // brepjs-patterns-disable: no-double-cast
     shell: (faces, thickness, opts) =>
-      wrap3D(unwrapOrThrow(shell(val, faces, thickness, opts)) as unknown as T),
-    offset: (distance, opts) => wrap3D(unwrapOrThrow(offset(val, distance, opts)) as unknown as T),
-    draft: (faces, opts) => wrap3D(unwrapOrThrow(draftFn(val, faces, opts)) as unknown as T),
+      wrap3D(
+        unwrapOrThrow(shell(val as unknown as ValidSolid, faces, thickness, opts)) as unknown as T
+      ),
+    // brepjs-patterns-disable: no-double-cast
+    offset: (distance, opts) =>
+      wrap3D(unwrapOrThrow(offset(val as unknown as ValidSolid, distance, opts)) as unknown as T),
+    // brepjs-patterns-disable: no-double-cast
+    draft: (faces, opts) =>
+      wrap3D(unwrapOrThrow(draftFn(val as unknown as ValidSolid, faces, opts)) as unknown as T),
 
     // Compound operations
     drill: (opts) => wrap3D(unwrapOrThrow(drillFn(val, opts)) as unknown as T),
@@ -447,9 +495,13 @@ function createWrappedFace(val: Face): WrappedFace {
     outerWire: () => outerWire(val),
     innerWires: () => innerWires(val),
 
-    // Wrapped faces from the fluent API are always oriented
-    extrude: (height) => wrap3D(unwrapOrThrow(extrude(val as OrientedFace, height))),
-    revolve: (opts) => wrap3D(unwrapOrThrow(revolve(val as OrientedFace, opts))),
+    // Wrapped faces from the fluent API are always oriented and planar
+    // brepjs-patterns-disable: no-double-cast
+    extrude: (height) =>
+      wrap3D(unwrapOrThrow(extrude(val as unknown as OrientedFace & PlanarFace, height))),
+    // brepjs-patterns-disable: no-double-cast
+    revolve: (opts) =>
+      wrap3D(unwrapOrThrow(revolve(val as unknown as OrientedFace & PlanarFace, opts))),
   };
 }
 
