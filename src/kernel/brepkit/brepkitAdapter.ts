@@ -2210,6 +2210,24 @@ export class BrepkitAdapter implements KernelAdapter {
     );
   }
 
+  draftWithHistory(
+    shape: KernelShape,
+    faces: KernelShape[],
+    pullDirection: [number, number, number],
+    neutralPlane: [number, number, number],
+    angleDeg: number | ((face: KernelShape) => number),
+    inputFaceHashes: number[],
+    hashUpperBound: number
+  ): OperationResult {
+    return this.buildEvolution(
+      this.draft(shape, faces, pullDirection, neutralPlane, angleDeg),
+      inputFaceHashes,
+      hashUpperBound,
+      false,
+      shape
+    );
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // Meshing
   // ═══════════════════════════════════════════════════════════════════════
@@ -5640,23 +5658,39 @@ export class BrepkitAdapter implements KernelAdapter {
     faces: KernelShape[],
     pullDirection: [number, number, number],
     neutralPlane: [number, number, number],
-    angleDeg: number
+    angleDeg: number | ((face: KernelShape) => number)
   ): KernelShape {
+    const [dx, dy, dz] = pullDirection;
+    const [nx, ny, nz] = neutralPlane;
+
+    if (typeof angleDeg === 'function') {
+      // Resolve per-face angles; brepkit only supports a single uniform angle
+      // per draft call (face IDs become stale after each call), so we require
+      // all callback-returned angles to be the same value.
+      const faceIds: number[] = [];
+      let uniformAngle: number | undefined;
+      for (const face of faces) {
+        const angle = angleDeg(face);
+        faceIds.push(unwrap(face, 'face'));
+        if (uniformAngle === undefined) {
+          uniformAngle = angle;
+        } else if (angle !== uniformAngle) {
+          throw new Error(
+            'brepkit does not support variable draft with multiple distinct angles. ' +
+              'Use the OCCT kernel for per-face angle variation, or use a uniform angle.'
+          );
+        }
+      }
+      if (uniformAngle === undefined) {
+        throw new Error('draft: no faces provided');
+      }
+      const solidId = unwrapSolidOrThrow(shape, 'draft');
+      return solidHandle(this.bk.draft(solidId, faceIds, dx, dy, dz, nx, ny, nz, uniformAngle));
+    }
+
     const solidId = unwrapSolidOrThrow(shape, 'draft');
     const faceIds = faces.map((f) => unwrap(f, 'face'));
-    return solidHandle(
-      this.bk.draft(
-        solidId,
-        faceIds,
-        pullDirection[0],
-        pullDirection[1],
-        pullDirection[2],
-        neutralPlane[0],
-        neutralPlane[1],
-        neutralPlane[2],
-        angleDeg
-      )
-    );
+    return solidHandle(this.bk.draft(solidId, faceIds, dx, dy, dz, nx, ny, nz, angleDeg));
   }
 
   defeature(shape: KernelShape, faces: KernelShape[]): KernelShape {
