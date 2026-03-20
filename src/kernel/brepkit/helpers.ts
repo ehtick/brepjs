@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-non-null-assertion -- WASM arrays have known-valid indices */
 /**
  * Shared helpers for the brepkit adapter module files.
  *
@@ -10,6 +9,8 @@
 
 import type { KernelShape, ShapeType } from '@/kernel/types.js';
 import type { BrepkitKernel } from './brepkitWasmTypes.js';
+import type { Curve2dHandle, BBox2dHandle } from '@/kernel/kernel2dTypes.js';
+import type { Curve2dObj, BBox2d as BkBBox2d } from './brepkit2d.js';
 
 // ---------------------------------------------------------------------------
 // Handle types
@@ -245,12 +246,14 @@ export function affineMatrix(
   translation: readonly [number, number, number]
 ): number[] {
   // prettier-ignore
+  /* eslint-disable @typescript-eslint/no-non-null-assertion -- WASM index */
   return [
     linear[0]!, linear[1]!, linear[2]!, translation[0],
     linear[3]!, linear[4]!, linear[5]!, translation[1],
     linear[6]!, linear[7]!, linear[8]!, translation[2],
     0,          0,          0,          1,
   ];
+  /* eslint-enable @typescript-eslint/no-non-null-assertion */
 }
 
 /** Build a 4x4 reflection matrix for a plane defined by origin + normal. */
@@ -342,4 +345,25 @@ export function hasBooleanOptions(opts: {
     opts.strategy !== undefined ||
     opts.fuzzyValue !== undefined
   );
+}
+
+// ---------------------------------------------------------------------------
+// 2D handle casts
+// ---------------------------------------------------------------------------
+
+/** Cast opaque Curve2dHandle to internal Curve2dObj. */
+export function c2d(h: Curve2dHandle): Curve2dObj {
+  return h as Curve2dObj;
+}
+
+/** Unwrap trimmed curve wrappers to get the basis geometry. */
+export function c2dBasis(h: Curve2dHandle): Curve2dObj {
+  let c = h as Curve2dObj;
+  while (c.__bk2d === 'trimmed') c = c.basis;
+  return c;
+}
+
+/** Cast opaque BBox2dHandle to internal BkBBox2d. */
+export function bb2d(h: BBox2dHandle): BkBBox2d {
+  return h as BkBBox2d;
 }

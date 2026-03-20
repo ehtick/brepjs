@@ -1,5 +1,5 @@
 /* v8 ignore file -- brepkit WASM kernel not available in OCCT test suite */
-/* eslint-disable @typescript-eslint/no-non-null-assertion -- WASM arrays have known-valid indices */
+/* eslint-disable @typescript-eslint/no-non-null-assertion -- remaining inline methods use WASM indices; will convert to per-line as methods are extracted to ops files */
 /**
  * BrepkitAdapter — KernelAdapter implementation backed by brepkit's WASM kernel.
  *
@@ -49,9 +49,167 @@ import type { BulkMeasurement } from '@/kernel/interfaces/measureOps.js';
 import type { TransformEntry } from '@/kernel/interfaces/transformOps.js';
 import type { BrepkitKernel } from './brepkitWasmTypes.js';
 import type { Curve2dHandle, BBox2dHandle } from '@/kernel/kernel2dTypes.js';
-import * as bk2d from './brepkit2d.js';
-import type { Curve2dObj, BBox2d as BkBBox2d } from './brepkit2d.js';
-import { computeCircumcircleCenter2D } from './constructionOps.js';
+import {
+  makeVertex as _makeVertex,
+  makeEdge as _makeEdge,
+  makeWire as _makeWire,
+  makeFace as _makeFace,
+  makeBox as _makeBox,
+  makeRectangle as _makeRectangle,
+  makeCylinder as _makeCylinder,
+  makeSphere as _makeSphere,
+  makeCone as _makeCone,
+  makeTorus as _makeTorus,
+  makeEllipsoid as _makeEllipsoid,
+  makeLineEdge as _makeLineEdge,
+  makeCircleEdge as _makeCircleEdge,
+  makeCircleArc as _makeCircleArc,
+  makeArcEdge as _makeArcEdge,
+  makeEllipseEdge as _makeEllipseEdge,
+  makeEllipseArc as _makeEllipseArc,
+  makeBezierEdge as _makeBezierEdge,
+  makeTangentArc as _makeTangentArc,
+  makeHelixWire as _makeHelixWire,
+  makeWireFromMixed as _makeWireFromMixed,
+  makeCompound as _makeCompound,
+  makeBoxFromCorners as _makeBoxFromCorners,
+  solidFromShell as _solidFromShell,
+  makeNonPlanarFace as _makeNonPlanarFace,
+  addHolesInFace as _addHolesInFace,
+  removeHolesFromFace as _removeHolesFromFace,
+  makeFaceOnSurface as _makeFaceOnSurface,
+  bsplineSurface as _bsplineSurface,
+  triangulatedSurface as _triangulatedSurface,
+  buildTriFace as _buildTriFace,
+  sewAndSolidify as _sewAndSolidify,
+  interpolatePoints as _interpolatePoints,
+  approximatePoints as _approximatePoints,
+  createPoint3d as _createPoint3d,
+  createDirection3d as _createDirection3d,
+  createVector3d as _createVector3d,
+  createAxis1 as _createAxis1,
+  createAxis2 as _createAxis2,
+  createAxis3 as _createAxis3,
+} from './constructionOps.js';
+import { syntheticCompounds } from './helpers.js';
+import {
+  fuse as _fuse,
+  cut as _cut,
+  intersect as _intersect,
+  section as _section,
+  fuseAll as _fuseAll,
+  cutAll as _cutAll,
+  split as _split,
+  meshBoolean as _meshBoolean,
+  hull as _hull,
+  hullFromPoints as _hullFromPoints,
+  buildSolidFromFaces as _buildSolidFromFaces,
+} from './booleanOps.js';
+import {
+  extrude as _extrude,
+  revolve as _revolve,
+  revolveVec as _revolveVec,
+  loft as _loft,
+  sweep as _sweep,
+  simplePipe as _simplePipe,
+  helicalSweep as _helicalSweep,
+  sweepWithOptions as _sweepWithOptions,
+  sweepPipeShell as _sweepPipeShell,
+  loftAdvanced as _loftAdvanced,
+  buildExtrusionLaw as _buildExtrusionLaw,
+  draftPrism as _draftPrism,
+} from './sweepOps.js';
+import {
+  fillet as _fillet,
+  chamfer as _chamfer,
+  chamferDistAngle as _chamferDistAngle,
+  shell as _shell,
+  thicken as _thicken,
+  offset as _offset,
+  filletVariable as _filletVariable,
+  defeature as _defeature,
+  offsetWire2D as _offsetWire2D,
+  simplify as _simplify,
+  reverseShape as _reverseShape,
+} from './modifierOps.js';
+import {
+  transform as _transform,
+  translate as _translate,
+  rotate as _rotate,
+  mirror as _mirror,
+  scale as _scale,
+  generalTransform as _generalTransform,
+  generalTransformNonOrthogonal as _generalTransformNonOrthogonal,
+  positionOnCurve as _positionOnCurve,
+  linearPattern as _linearPattern,
+  circularPattern as _circularPattern,
+  gridPattern as _gridPattern,
+} from './transformOps.js';
+import {
+  createPoint2d as _createPoint2d,
+  createDirection2d as _createDirection2d,
+  createVector2d as _createVector2d,
+  createAxis2d as _createAxis2d,
+  wrapCurve2dHandle as _wrapCurve2dHandle,
+  createCurve2dAdaptor as _createCurve2dAdaptor,
+  makeLine2d as _makeLine2d,
+  makeCircle2d as _makeCircle2d,
+  makeArc2dThreePoints as _makeArc2dThreePoints,
+  makeArc2dTangent as _makeArc2dTangent,
+  makeEllipse2d as _makeEllipse2d,
+  makeEllipseArc2d as _makeEllipseArc2d,
+  makeBezier2d as _makeBezier2d,
+  makeBSpline2d as _makeBSpline2d,
+  evaluateCurve2d as _evaluateCurve2d,
+  evaluateCurve2dD1 as _evaluateCurve2dD1,
+  getCurve2dBounds as _getCurve2dBounds,
+  getCurve2dType as _getCurve2dType,
+  trimCurve2d as _trimCurve2d,
+  reverseCurve2d as _reverseCurve2d,
+  copyCurve2d as _copyCurve2d,
+  offsetCurve2d as _offsetCurve2d,
+  translateCurve2d as _translateCurve2d,
+  rotateCurve2d as _rotateCurve2d,
+  scaleCurve2d as _scaleCurve2d,
+  mirrorCurve2dAtPoint as _mirrorCurve2dAtPoint,
+  mirrorCurve2dAcrossAxis as _mirrorCurve2dAcrossAxis,
+  affinityTransform2d as _affinityTransform2d,
+  createIdentityGTrsf2d as _createIdentityGTrsf2d,
+  createAffinityGTrsf2d as _createAffinityGTrsf2d,
+  createTranslationGTrsf2d as _createTranslationGTrsf2d,
+  createMirrorGTrsf2d as _createMirrorGTrsf2d,
+  createRotationGTrsf2d as _createRotationGTrsf2d,
+  createScaleGTrsf2d as _createScaleGTrsf2d,
+  setGTrsf2dTranslationPart as _setGTrsf2dTranslationPart,
+  multiplyGTrsf2d as _multiplyGTrsf2d,
+  transformCurve2dGeneral as _transformCurve2dGeneral,
+  intersectCurves2d as _intersectCurves2d,
+  projectPointOnCurve2d as _projectPointOnCurve2d,
+  distanceBetweenCurves2d as _distanceBetweenCurves2d,
+  approximateCurve2dAsBSpline as _approximateCurve2dAsBSpline,
+  decomposeBSpline2dToBeziers as _decomposeBSpline2dToBeziers,
+  createBoundingBox2d as _createBoundingBox2d,
+  addCurveToBBox2d as _addCurveToBBox2d,
+  getBBox2dBounds as _getBBox2dBounds,
+  mergeBBox2d as _mergeBBox2d,
+  isBBox2dOut as _isBBox2dOut,
+  isBBox2dOutPoint as _isBBox2dOutPoint,
+  getCurve2dCircleData as _getCurve2dCircleData,
+  getCurve2dEllipseData as _getCurve2dEllipseData,
+  getCurve2dBezierPoles as _getCurve2dBezierPoles,
+  getCurve2dBezierDegree as _getCurve2dBezierDegree,
+  getCurve2dBSplineData as _getCurve2dBSplineData,
+  serializeCurve2d as _serializeCurve2d,
+  deserializeCurve2d as _deserializeCurve2d,
+  splitCurve2d as _splitCurve2d,
+  liftCurve2dToPlane as _liftCurve2dToPlane,
+  buildEdgeOnSurface as _buildEdgeOnSurface,
+  extractSurfaceFromFace as _extractSurfaceFromFace,
+  extractCurve2dFromEdge as _extractCurve2dFromEdge,
+  buildCurves3d as _buildCurves3d,
+  fixWireOnFace as _fixWireOnFace,
+  fillSurface as _fillSurface,
+} from './kernel2dOps.js';
 
 // ---------------------------------------------------------------------------
 // Handle types
@@ -313,20 +471,6 @@ function mirrorMatrix(
 /** Default tessellation deflection used when brepkit requires it but brepjs doesn't pass it. */
 const DEFAULT_DEFLECTION = 0.01;
 
-/** Default sphere/torus segment count (brepkit requires explicit segments). */
-const DEFAULT_SEGMENTS = 32;
-
-/**
- * Counter for synthetic compound IDs (non-solid compounds stored JS-side).
- * Starts high to avoid colliding with WASM arena indices.
- */
-let syntheticCompoundCounter = 900_000;
-
-/** JS-side storage for compound children (wires, faces, edges). */
-const syntheticCompounds = new Map<number, BrepkitHandle[]>();
-
-// NotImplementedError removed (unused)
-
 // ---------------------------------------------------------------------------
 // BrepkitAdapter
 // ---------------------------------------------------------------------------
@@ -356,19 +500,6 @@ function warnOnce(key: string, message: string): void {
   console.warn(`brepkit: ${message}`);
 }
 
-function mapNumericTransition(mode: number): string | undefined {
-  switch (mode) {
-    case 0:
-      return 'rmf';
-    case 1:
-      return 'rightCorner';
-    case 2:
-      return 'roundCorner';
-    default:
-      return undefined;
-  }
-}
-
 function mapStringTransition(mode: string): string | undefined {
   switch (mode) {
     case 'right':
@@ -380,16 +511,6 @@ function mapStringTransition(mode: string): string | undefined {
     default:
       return undefined;
   }
-}
-
-/** Check if a BooleanOptions object has any meaningful (non-signal) property set. */
-function hasBooleanOptions(opts: BooleanOptions): boolean {
-  return (
-    opts.optimisation !== undefined ||
-    opts.simplify !== undefined ||
-    opts.strategy !== undefined ||
-    opts.fuzzyValue !== undefined
-  );
 }
 
 export class BrepkitAdapter implements KernelAdapter {
@@ -410,166 +531,31 @@ export class BrepkitAdapter implements KernelAdapter {
   // ═══════════════════════════════════════════════════════════════════════
 
   fuse(shape: KernelShape, tool: KernelShape, _options?: BooleanOptions): KernelShape {
-    if (_options && hasBooleanOptions(_options)) {
-      warnOnce(
-        'boolean-options',
-        'BooleanOptions (optimisation, simplify, strategy, fuzzyValue) not supported; ignored.'
-      );
-    }
-    const baseId = unwrapSolidOrThrow(shape, 'fuse');
-    const toolHandle = tool as BrepkitHandle;
-    if (toolHandle.type === 'compound') {
-      const toolSolidIds: number[] = toArray(this.bk.getCompoundSolids(toolHandle.id));
-      let currentId = baseId;
-      for (const toolSolidId of toolSolidIds) {
-        currentId = this.bk.fuse(currentId, toolSolidId);
-      }
-      return solidHandle(currentId);
-    }
-    const result = this.bk.fuse(baseId, unwrapSolidOrThrow(tool, 'fuse'));
-    return solidHandle(result);
+    return _fuse(this.bk, shape, tool, _options);
   }
 
   cut(shape: KernelShape, tool: KernelShape, _options?: BooleanOptions): KernelShape {
-    if (_options && hasBooleanOptions(_options)) {
-      warnOnce(
-        'boolean-options',
-        'BooleanOptions (optimisation, simplify, strategy, fuzzyValue) not supported; ignored.'
-      );
-    }
-    const baseId = unwrapSolidOrThrow(shape, 'cut');
-    // If tool is a compound (e.g. from cutAll's buildCompound), iteratively
-    // cut each child solid from the base.
-    const toolHandle = tool as BrepkitHandle;
-    if (toolHandle.type === 'compound') {
-      const toolSolidIds: number[] = toArray(this.bk.getCompoundSolids(toolHandle.id));
-      let currentId = baseId;
-      for (const toolSolidId of toolSolidIds) {
-        currentId = this.bk.cut(currentId, toolSolidId);
-      }
-      return solidHandle(currentId);
-    }
-    const result = this.bk.cut(baseId, unwrapSolidOrThrow(tool, 'cut'));
-    return solidHandle(result);
+    return _cut(this.bk, shape, tool, _options);
   }
 
   intersect(shape: KernelShape, tool: KernelShape, _options?: BooleanOptions): KernelShape {
-    if (_options && hasBooleanOptions(_options)) {
-      warnOnce(
-        'boolean-options',
-        'BooleanOptions (optimisation, simplify, strategy, fuzzyValue) not supported; ignored.'
-      );
-    }
-    const result = this.bk.intersect(
-      unwrapSolidOrThrow(shape, 'intersect'),
-      unwrapSolidOrThrow(tool, 'intersect')
-    );
-    return solidHandle(result);
+    return _intersect(this.bk, shape, tool, _options);
   }
 
   section(shape: KernelShape, plane: KernelShape, _approximation?: boolean): KernelShape {
-    // brepjs passes a face (or thin solid) as the plane — extract normal + point.
-    const { point, normal } = this.extractPlaneFromFace(plane);
-
-    const solidId =
-      isBrepkitHandle(shape) && shape.type === 'solid' ? shape.id : unwrap(shape, 'solid');
-
-    const faceIds = toArray(
-      this.bk.section(solidId, point[0], point[1], point[2], normal[0], normal[1], normal[2])
-    );
-
-    if (faceIds.length === 0) {
-      // Return empty compound — matches OCCT behavior for no-intersection sections
-      return compoundHandle(this.bk.makeCompound([]));
-    }
-
-    // brepkit section returns face handles — extract wires from them.
-    // Return the outer wire of the first section face (matches OCCT which
-    // returns a compound of edges forming the cross-section).
-    const firstWireId = this.bk.getFaceOuterWire(faceIds[0]!);
-    return wireHandle(firstWireId);
+    return _section(this.bk, shape, plane, _approximation);
   }
 
   fuseAll(shapes: KernelShape[], options?: BooleanOptions): KernelShape {
-    if (shapes.length === 0) throw new Error('brepkit: fuseAll requires at least one shape');
-    if (shapes.length === 1) return shapes[0]!;
-
-    // Single WASM call when native compoundFuse is available.
-    if (this.bk.compoundFuse) {
-      const solidIds: number[] = [];
-      for (const shape of shapes) {
-        const h = shape as BrepkitHandle;
-        if (h.type === 'compound') {
-          solidIds.push(...toArray(this.bk.getCompoundSolids(h.id)));
-        } else {
-          solidIds.push(unwrapSolidOrThrow(shape, 'fuseAll'));
-        }
-      }
-      if (solidIds.length === 0) {
-        throw new Error('brepkit: fuseAll resolved to zero solid IDs');
-      }
-      const result = this.bk.compoundFuse(new Uint32Array(solidIds));
-      return solidHandle(result);
-    }
-
-    // Fallback: balanced binary tree reduction — O(log n) depth, ~N WASM calls.
-    let current = [...shapes];
-    while (current.length > 1) {
-      const next: KernelShape[] = [];
-      for (let i = 0; i < current.length; i += 2) {
-        if (i + 1 < current.length) {
-          next.push(this.fuse(current[i], current[i + 1], options));
-        } else {
-          next.push(current[i]);
-        }
-      }
-      current = next;
-    }
-    return current[0]!;
+    return _fuseAll(this.bk, shapes, options);
   }
 
   cutAll(shape: KernelShape, tools: KernelShape[], options?: BooleanOptions): KernelShape {
-    if (tools.length === 0) return shape;
-    if (tools.length === 1) return this.cut(shape, tools[0], options);
-
-    // Extract solid IDs from all tools (exploding compounds into individual solids).
-    const baseId = unwrapSolidOrThrow(shape, 'cutAll');
-    const toolIds: number[] = [];
-    for (const tool of tools) {
-      const h = tool as BrepkitHandle;
-      if (h.type === 'compound') {
-        toolIds.push(...toArray(this.bk.getCompoundSolids(h.id)));
-      } else {
-        toolIds.push(unwrapSolidOrThrow(tool, 'cutAll'));
-      }
-    }
-    if (toolIds.length === 0) return shape;
-
-    // Single WASM call: brepkit does AABB pre-filtering and sequential cuts in Rust.
-    const result = this.bk.compoundCut(baseId, new Uint32Array(toolIds));
-    return solidHandle(result);
+    return _cutAll(this.bk, shape, tools, options);
   }
 
   split(shape: KernelShape, tools: KernelShape[]): KernelShape {
-    // brepkit's split takes a plane (point + normal), not a shape.
-    // Use the first tool as a planar face to get the split plane.
-    if (tools.length === 0) throw new Error('brepkit: split requires at least one tool');
-    const { point, normal } = this.extractPlaneFromFace(tools[0]);
-
-    const result = toArray(
-      this.bk.split(
-        unwrap(shape, 'solid'),
-        point[0],
-        point[1],
-        point[2],
-        normal[0],
-        normal[1],
-        normal[2]
-      )
-    );
-    // brepkit returns [positive, negative]. brepjs expects a compound of
-    // all fragments (matching OCCT behavior).
-    return compoundHandle(this.bk.makeCompound(result));
+    return _split(this.bk, shape, tools);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -577,37 +563,14 @@ export class BrepkitAdapter implements KernelAdapter {
   // ═══════════════════════════════════════════════════════════════════════
 
   hull(shapes: KernelShape[], _tolerance: number): KernelShape {
-    // Collect all actual vertices from all shapes
-    const coords: number[] = [];
-    for (const shape of shapes) {
-      const h = shape as BrepkitHandle;
-      if (h.type === 'solid') {
-        const vertIds = toArray(this.bk.getSolidVertices(h.id));
-        for (const vid of vertIds) {
-          const pos = this.bk.getVertexPosition(vid);
-          coords.push(pos[0]!, pos[1]!, pos[2]!);
-        }
-      } else if (h.type === 'vertex') {
-        const pos = this.bk.getVertexPosition(h.id);
-        coords.push(pos[0]!, pos[1]!, pos[2]!);
-      }
-    }
-    if (coords.length < 12) throw new Error('brepkit: hull requires enough points');
-    const id = this.bk.convexHull(coords);
-    return solidHandle(id);
+    return _hull(this.bk, shapes, _tolerance);
   }
 
   hullFromPoints(
     points: Array<{ x: number; y: number; z: number }>,
     _tolerance: number
   ): KernelShape {
-    if (points.length < 4) throw new Error('brepkit: hull needs at least 4 points');
-    const coords: number[] = [];
-    for (const p of points) {
-      coords.push(p.x, p.y, p.z);
-    }
-    const id = this.bk.convexHull(coords);
-    return solidHandle(id);
+    return _hullFromPoints(this.bk, points, _tolerance);
   }
 
   buildSolidFromFaces(
@@ -615,23 +578,7 @@ export class BrepkitAdapter implements KernelAdapter {
     faces: Array<readonly [number, number, number]>,
     _tolerance: number
   ): KernelShape {
-    // Use native importIndexedMesh for correct volume computation
-    const positions = new Float64Array(points.length * 3);
-    for (let i = 0; i < points.length; i++) {
-      const p = points[i]!;
-      positions[i * 3] = p.x;
-      positions[i * 3 + 1] = p.y;
-      positions[i * 3 + 2] = p.z;
-    }
-    const indices = new Uint32Array(faces.length * 3);
-    for (let i = 0; i < faces.length; i++) {
-      const f = faces[i]!;
-      indices[i * 3] = f[0];
-      indices[i * 3 + 1] = f[1];
-      indices[i * 3 + 2] = f[2];
-    }
-    const id = this.bk.importIndexedMesh(positions, indices);
-    return solidHandle(id);
+    return _buildSolidFromFaces(this.bk, points, faces, _tolerance);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -639,77 +586,27 @@ export class BrepkitAdapter implements KernelAdapter {
   // ═══════════════════════════════════════════════════════════════════════
 
   makeVertex(x: number, y: number, z: number): KernelShape {
-    const id = this.bk.makeVertex(x, y, z);
-    return vertexHandle(id);
+    return _makeVertex(this.bk, x, y, z);
   }
 
   makeEdge(curve: KernelType, start?: number, end?: number): KernelShape {
-    // If curve is an axis (with origin/direction), make a line edge
-    if (curve && typeof curve === 'object' && 'origin' in curve && 'direction' in curve) {
-      const { origin, direction } = curve as {
-        origin: [number, number, number];
-        direction: [number, number, number];
-      };
-      const t0 = start ?? 0;
-      const t1 = end ?? 1;
-      return this.makeLineEdge(
-        [
-          origin[0] + direction[0] * t0,
-          origin[1] + direction[1] * t0,
-          origin[2] + direction[2] * t0,
-        ],
-        [
-          origin[0] + direction[0] * t1,
-          origin[1] + direction[1] * t1,
-          origin[2] + direction[2] * t1,
-        ]
-      );
-    }
-    // If it's already a brepkit edge, return it (may need trimming)
-    if (isBrepkitHandle(curve) && curve.type === 'edge') {
-      return curve;
-    }
-    throw new Error('brepkit: makeEdge requires a curve with origin/direction, or an edge handle');
+    return _makeEdge(this.bk, curve, start, end);
   }
 
   makeWire(edges: KernelShape[]): KernelShape {
-    // Flatten: if any element is a wire (e.g. from liftCurve2dToPlane splitting
-    // a circle into multiple arcs), extract its constituent edges.
-    const edgeIds: number[] = [];
-    for (const e of edges) {
-      const h = e as BrepkitHandle;
-      if (h.type === 'wire') {
-        for (const childEdgeId of toArray(this.bk.getWireEdges(h.id))) {
-          edgeIds.push(childEdgeId);
-        }
-      } else {
-        edgeIds.push(unwrap(e, 'edge'));
-      }
-    }
-    const id = this.bk.makeWire(edgeIds, true);
-    return wireHandle(id);
+    return _makeWire(this.bk, edges);
   }
 
   makeFace(wire: KernelShape, _planar?: boolean): KernelShape {
-    const h = wire as BrepkitHandle;
-    // If given an edge (e.g. a closed circle), wrap it in a wire first
-    if (h.type === 'edge') {
-      const wireId = this.bk.makeWire([h.id], true);
-      const id = this.bk.makeFaceFromWire(wireId);
-      return faceHandle(id);
-    }
-    const id = this.bk.makeFaceFromWire(unwrap(wire, 'wire'));
-    return faceHandle(id);
+    return _makeFace(this.bk, wire, _planar);
   }
 
   makeBox(width: number, height: number, depth: number): KernelShape {
-    const id = this.bk.makeBox(width, height, depth);
-    return solidHandle(id);
+    return _makeBox(this.bk, width, height, depth);
   }
 
   makeRectangle(width: number, height: number): KernelShape {
-    const id = this.bk.makeRectangle(width, height);
-    return faceHandle(id);
+    return _makeRectangle(this.bk, width, height);
   }
 
   makeCylinder(
@@ -718,24 +615,11 @@ export class BrepkitAdapter implements KernelAdapter {
     center?: [number, number, number],
     direction?: [number, number, number]
   ): KernelShape {
-    const id = this.bk.makeCylinder(radius, height);
-    const sh = solidHandle(id);
-
-    // brepkit creates cylinders along +Z at origin.
-    // If center or direction differ, we need to transform.
-    if (this.needsTransform(center, direction)) {
-      return this.transformToPlacement(sh, center, direction);
-    }
-    return sh;
+    return _makeCylinder(this.bk, radius, height, center, direction);
   }
 
   makeSphere(radius: number, center?: [number, number, number]): KernelShape {
-    const id = this.bk.makeSphere(radius, DEFAULT_SEGMENTS);
-    const sh = solidHandle(id);
-    if (center && (center[0] !== 0 || center[1] !== 0 || center[2] !== 0)) {
-      return this.translate(sh, center[0], center[1], center[2]);
-    }
-    return sh;
+    return _makeSphere(this.bk, radius, center);
   }
 
   makeCone(
@@ -745,12 +629,7 @@ export class BrepkitAdapter implements KernelAdapter {
     center?: [number, number, number],
     direction?: [number, number, number]
   ): KernelShape {
-    const id = this.bk.makeCone(radius1, radius2, height);
-    const sh = solidHandle(id);
-    if (this.needsTransform(center, direction)) {
-      return this.transformToPlacement(sh, center, direction);
-    }
-    return sh;
+    return _makeCone(this.bk, radius1, radius2, height, center, direction);
   }
 
   makeTorus(
@@ -759,34 +638,17 @@ export class BrepkitAdapter implements KernelAdapter {
     center?: [number, number, number],
     direction?: [number, number, number]
   ): KernelShape {
-    const id = this.bk.makeTorus(majorRadius, minorRadius, DEFAULT_SEGMENTS);
-    const sh = solidHandle(id);
-    if (this.needsTransform(center, direction)) {
-      return this.transformToPlacement(sh, center, direction);
-    }
-    return sh;
+    return _makeTorus(this.bk, majorRadius, minorRadius, center, direction);
   }
 
   makeEllipsoid(aLength: number, bLength: number, cLength: number): KernelShape {
-    // brepkit 0.5.2 makeEllipsoid ignores radii — build via sphere + non-uniform scale
-    const maxR = Math.max(aLength, bLength, cLength);
-    const sphere = this.makeSphere(maxR);
-    const scaleX = aLength / maxR;
-    const scaleY = bLength / maxR;
-    const scaleZ = cLength / maxR;
-    return this.generalTransform(
-      sphere,
-      [scaleX, 0, 0, 0, scaleY, 0, 0, 0, scaleZ],
-      [0, 0, 0],
-      false
-    );
+    return _makeEllipsoid(this.bk, aLength, bLength, cLength);
   }
 
   // --- Extended construction ---
 
   makeLineEdge(p1: [number, number, number], p2: [number, number, number]): KernelShape {
-    const id = this.bk.makeLineEdge(p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]);
-    return edgeHandle(id);
+    return _makeLineEdge(this.bk, p1, p2);
   }
 
   makeCircleEdge(
@@ -794,8 +656,7 @@ export class BrepkitAdapter implements KernelAdapter {
     normal: [number, number, number],
     radius: number
   ): KernelShape {
-    // Approximate as a closed NURBS circle (9-point rational B-spline)
-    return this.makeCircleNurbs(center, normal, radius, 0, 2 * Math.PI);
+    return _makeCircleEdge(this.bk, center, normal, radius);
   }
 
   makeCircleArc(
@@ -805,7 +666,7 @@ export class BrepkitAdapter implements KernelAdapter {
     startAngle: number,
     endAngle: number
   ): KernelShape {
-    return this.makeCircleNurbs(center, normal, radius, startAngle, endAngle);
+    return _makeCircleArc(this.bk, center, normal, radius, startAngle, endAngle);
   }
 
   makeArcEdge(
@@ -813,70 +674,7 @@ export class BrepkitAdapter implements KernelAdapter {
     p2: [number, number, number],
     p3: [number, number, number]
   ): KernelShape {
-    // Three-point arc: compute center and normal, then delegate to native makeCircleArc3d
-    // Compute normal from cross product of (p2-p1) × (p3-p1)
-    const ab: [number, number, number] = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
-    const ac: [number, number, number] = [p3[0] - p1[0], p3[1] - p1[1], p3[2] - p1[2]];
-    const normal: [number, number, number] = [
-      ab[1] * ac[2] - ab[2] * ac[1],
-      ab[2] * ac[0] - ab[0] * ac[2],
-      ab[0] * ac[1] - ab[1] * ac[0],
-    ];
-    const nLen = Math.sqrt(normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2);
-    if (nLen < 1e-12) {
-      // Degenerate (collinear): fall back to line
-      return this.makeLineEdge(p1, p3);
-    }
-    const nz: [number, number, number] = [normal[0] / nLen, normal[1] / nLen, normal[2] / nLen];
-
-    // Build local 2D frame in the arc plane: ux = normalized(p2-p1), uy = nz × ux
-    const abLen = Math.sqrt(ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2);
-    const ux: [number, number, number] = [ab[0] / abLen, ab[1] / abLen, ab[2] / abLen];
-    const uy: [number, number, number] = [
-      nz[1] * ux[2] - nz[2] * ux[1],
-      nz[2] * ux[0] - nz[0] * ux[2],
-      nz[0] * ux[1] - nz[1] * ux[0],
-    ];
-
-    // Project p1, p2, p3 into the local 2D frame (relative to p1 as origin)
-    const proj = (p: [number, number, number]): [number, number] => {
-      const dx = p[0] - p1[0],
-        dy = p[1] - p1[1],
-        dz = p[2] - p1[2];
-      return [dx * ux[0] + dy * ux[1] + dz * ux[2], dx * uy[0] + dy * uy[1] + dz * uy[2]];
-    };
-    const [ax2, ay2] = proj(p1); // (0, 0)
-    const [bx2, by2] = proj(p2);
-    const [cx2, cy2] = proj(p3);
-
-    // 2D circumscribed circle center
-    const cc = computeCircumcircleCenter2D(ax2, ay2, bx2, by2, cx2, cy2);
-    if (!cc) return this.makeLineEdge(p1, p3);
-    const [ccx, ccy] = cc;
-
-    // Lift 2D center back to 3D
-    const center: [number, number, number] = [
-      p1[0] + ccx * ux[0] + ccy * uy[0],
-      p1[1] + ccx * ux[1] + ccy * uy[1],
-      p1[2] + ccx * ux[2] + ccy * uy[2],
-    ];
-    // Use native makeCircleArc3d for true Circle3D edges (not NURBS).
-    // p1 = start, p3 = end. The arc traverses through p2.
-    const id = this.bk.makeCircleArc3d(
-      p1[0],
-      p1[1],
-      p1[2],
-      p3[0],
-      p3[1],
-      p3[2],
-      center[0],
-      center[1],
-      center[2],
-      nz[0],
-      nz[1],
-      nz[2]
-    );
-    return edgeHandle(id);
+    return _makeArcEdge(this.bk, p1, p2, p3);
   }
 
   makeEllipseEdge(
@@ -886,7 +684,7 @@ export class BrepkitAdapter implements KernelAdapter {
     minorRadius: number,
     xDir?: [number, number, number]
   ): KernelShape {
-    return this.makeEllipseNurbs(center, normal, majorRadius, minorRadius, 0, 2 * Math.PI, xDir);
+    return _makeEllipseEdge(this.bk, center, normal, majorRadius, minorRadius, xDir);
   }
 
   makeEllipseArc(
@@ -898,7 +696,8 @@ export class BrepkitAdapter implements KernelAdapter {
     endAngle: number,
     xDir?: [number, number, number]
   ): KernelShape {
-    return this.makeEllipseNurbs(
+    return _makeEllipseArc(
+      this.bk,
       center,
       normal,
       majorRadius,
@@ -910,30 +709,7 @@ export class BrepkitAdapter implements KernelAdapter {
   }
 
   makeBezierEdge(points: [number, number, number][]): KernelShape {
-    if (points.length < 2) throw new Error('brepkit: bezier requires at least 2 points');
-    // Convert Bezier control points to NURBS (Bezier is a special case of NURBS)
-    const degree = points.length - 1;
-    const n = points.length;
-    // Bezier knot vector: [0,...,0, 1,...,1] with (degree+1) copies at each end
-    const knots: number[] = [...Array(degree + 1).fill(0), ...Array(degree + 1).fill(1)];
-    const weights = Array(n).fill(1);
-    const flatCp: number[] = points.flatMap(([x, y, z]) => [x, y, z]);
-    const startPt = points[0]!;
-    const endPt = points[n - 1]!;
-
-    const id = this.bk.makeNurbsEdge(
-      startPt[0],
-      startPt[1],
-      startPt[2],
-      endPt[0],
-      endPt[1],
-      endPt[2],
-      degree,
-      knots,
-      flatCp,
-      weights
-    );
-    return edgeHandle(id);
+    return _makeBezierEdge(this.bk, points);
   }
 
   makeTangentArc(
@@ -941,21 +717,7 @@ export class BrepkitAdapter implements KernelAdapter {
     startTangent: [number, number, number],
     endPoint: [number, number, number]
   ): KernelShape {
-    if (!this.bk.makeTangentArc3d) {
-      throw new Error('makeTangentArc requires brepkit-wasm >= 1.1.0');
-    }
-    const id = this.bk.makeTangentArc3d(
-      startPoint[0],
-      startPoint[1],
-      startPoint[2],
-      startTangent[0],
-      startTangent[1],
-      startTangent[2],
-      endPoint[0],
-      endPoint[1],
-      endPoint[2]
-    );
-    return edgeHandle(id);
+    return _makeTangentArc(this.bk, startPoint, startTangent, endPoint);
   }
 
   makeHelixWire(
@@ -966,97 +728,23 @@ export class BrepkitAdapter implements KernelAdapter {
     _direction?: [number, number, number],
     leftHanded?: boolean
   ): KernelShape {
-    // Build a NURBS helix approximation by sampling and interpolating
-    const turns = height / pitch;
-    const nSamplesPerTurn = 16;
-    const nSamples = Math.max(4, Math.ceil(turns * nSamplesPerTurn));
-    const cx = center?.[0] ?? 0;
-    const cy = center?.[1] ?? 0;
-    const cz = center?.[2] ?? 0;
-    const sign = leftHanded ? -1 : 1;
-
-    const points: [number, number, number][] = [];
-    for (let i = 0; i <= nSamples; i++) {
-      const t = i / nSamples;
-      const angle = sign * 2 * Math.PI * turns * t;
-      points.push([cx + radius * Math.cos(angle), cy + radius * Math.sin(angle), cz + height * t]);
-    }
-
-    const edge = this.interpolatePoints(points);
-    // Wrap edge in a wire
-    return this.makeWire([edge]);
+    return _makeHelixWire(this.bk, pitch, height, radius, center, _direction, leftHanded);
   }
 
   makeWireFromMixed(items: KernelShape[]): KernelShape {
-    // Filter items that are edges or wires, extract edge handles
-    const edgeIds: number[] = [];
-    for (const item of items) {
-      const h = item as BrepkitHandle;
-      if (h.type === 'edge') {
-        edgeIds.push(h.id);
-      } else if (h.type === 'wire') {
-        for (const childEdgeId of toArray(this.bk.getWireEdges(h.id))) {
-          edgeIds.push(childEdgeId);
-        }
-      }
-    }
-    if (edgeIds.length === 0)
-      throw new Error('brepkit: makeWireFromMixed requires at least one edge');
-    const id = this.bk.makeWire(edgeIds, false);
-    return wireHandle(id);
+    return _makeWireFromMixed(this.bk, items);
   }
 
   makeCompound(shapes: KernelShape[]): KernelShape {
-    const handles = shapes.filter(isBrepkitHandle);
-    if (handles.length === 0) {
-      throw new Error('brepkit: makeCompound requires at least one shape');
-    }
-    // If all shapes are solids, use the native WASM compound
-    const allSolids = handles.every((h) => h.type === 'solid');
-    if (allSolids) {
-      const id = this.bk.makeCompound(handles.map((h) => h.id));
-      return compoundHandle(id);
-    }
-    // Mixed types: store children JS-side
-    const id = syntheticCompoundCounter++;
-    syntheticCompounds.set(id, handles);
-    return compoundHandle(id);
+    return _makeCompound(this.bk, shapes);
   }
 
   makeBoxFromCorners(p1: [number, number, number], p2: [number, number, number]): KernelShape {
-    const w = Math.abs(p2[0] - p1[0]);
-    const h = Math.abs(p2[1] - p1[1]);
-    const d = Math.abs(p2[2] - p1[2]);
-    const box = this.makeBox(w, h, d);
-    // brepkit boxes have corner at origin — translate to min corner
-    const minX = Math.min(p1[0], p2[0]);
-    const minY = Math.min(p1[1], p2[1]);
-    const minZ = Math.min(p1[2], p2[2]);
-    if (minX !== 0 || minY !== 0 || minZ !== 0) {
-      return this.translate(box, minX, minY, minZ);
-    }
-    return box;
+    return _makeBoxFromCorners(this.bk, p1, p2);
   }
 
   solidFromShell(shell: KernelShape): KernelShape {
-    const h = shell as BrepkitHandle;
-    // brepkit's sew already produces a solid, so if we receive one, just return it.
-    if (h.type === 'solid') return shell;
-    // brepkit's sew returns solid IDs wrapped as shell handles. Try as
-    // solid first (check if it resolves), then fall back to solidFromShell.
-    if (h.type === 'shell') {
-      try {
-        // If the ID is actually a solid, just re-wrap it
-        this.bk.getSolidFaces(h.id);
-        return solidHandle(h.id);
-      } catch {
-        // Genuine shell handle — convert to solid
-      }
-      const id = this.bk.solidFromShell(h.id);
-      return solidHandle(id);
-    }
-    const id = this.bk.solidFromShell(unwrap(shell, 'shell'));
-    return solidHandle(id);
+    return _solidFromShell(this.bk, shell);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1064,42 +752,11 @@ export class BrepkitAdapter implements KernelAdapter {
   // ═══════════════════════════════════════════════════════════════════════
 
   extrude(face: KernelShape, direction: [number, number, number], length: number): KernelShape {
-    const id = this.bk.extrude(
-      unwrap(face, 'face'),
-      direction[0],
-      direction[1],
-      direction[2],
-      length
-    );
-    return solidHandle(id);
+    return _extrude(this.bk, face, direction, length);
   }
 
   revolve(shape: KernelShape, axis: KernelType, angle: number): KernelShape {
-    // brepjs passes an axis as a KernelType (opaque). For brepkit, we need
-    // origin + direction. The axis should be a BrepkitHandle with axis info.
-    // Fallback: if axis is a plain object with origin/direction
-    if (axis && typeof axis === 'object' && 'origin' in axis && 'direction' in axis) {
-      const { origin, direction } = axis as {
-        origin: [number, number, number];
-        direction: [number, number, number];
-      };
-      // brepjs passes angle in radians; brepkit WASM expects degrees.
-      // Clamp to (0, 360] for full revolution safety.
-      let angleDeg = angle * (180 / Math.PI);
-      if (angleDeg > 360) angleDeg = 360;
-      const id = this.bk.revolve(
-        unwrap(shape, 'face'),
-        origin[0],
-        origin[1],
-        origin[2],
-        direction[0],
-        direction[1],
-        direction[2],
-        angleDeg
-      );
-      return solidHandle(id);
-    }
-    throw new Error('brepkit: revolve requires axis with origin and direction');
+    return _revolve(this.bk, shape, axis, angle);
   }
 
   revolveVec(
@@ -1108,22 +765,7 @@ export class BrepkitAdapter implements KernelAdapter {
     direction: [number, number, number],
     angle: number
   ): KernelShape {
-    // brepjs passes angle in radians; brepkit WASM expects degrees.
-    // Clamp to (0, 360] — angles > 2π (e.g. 360 passed as raw degrees)
-    // are treated as a full revolution.
-    let angleDeg = angle * (180 / Math.PI);
-    if (angleDeg > 360) angleDeg = 360;
-    const id = this.bk.revolve(
-      unwrap(shape, 'face'),
-      center[0],
-      center[1],
-      center[2],
-      direction[0],
-      direction[1],
-      direction[2],
-      angleDeg
-    );
-    return solidHandle(id);
+    return _revolveVec(this.bk, shape, center, direction, angle);
   }
 
   loft(
@@ -1132,112 +774,15 @@ export class BrepkitAdapter implements KernelAdapter {
     _startShape?: KernelShape,
     _endShape?: KernelShape
   ): KernelShape {
-    if (_ruled !== undefined || _startShape !== undefined || _endShape !== undefined) {
-      warnOnce(
-        'loft-options',
-        'Loft options (ruled, startShape, endShape) not supported; ignored.'
-      );
-    }
-    // brepkit's loft takes face handles — convert wires to faces first
-    const faceIds = wires.map((w) => {
-      const h = w as BrepkitHandle;
-      if (h.type === 'wire') {
-        return this.bk.makeFaceFromWire(h.id);
-      }
-      return unwrap(w, 'face');
-    });
-    const id = this.bk.loft(faceIds);
-    return solidHandle(id);
+    return _loft(this.bk, wires, _ruled, _startShape, _endShape);
   }
 
   sweep(wire: KernelShape, spine: KernelShape, options?: { transitionMode?: number }): KernelShape {
-    const contactMode =
-      options?.transitionMode !== undefined
-        ? mapNumericTransition(options.transitionMode)
-        : undefined;
-
-    const profileHandle = wire as BrepkitHandle;
-    const faceId =
-      profileHandle.type === 'wire'
-        ? this.bk.makeFaceFromWire(profileHandle.id)
-        : unwrap(wire, 'face');
-
-    const spineHandle = spine as BrepkitHandle;
-
-    if (spineHandle.type === 'wire') {
-      const edges = this.iterShapes(spine, 'edge');
-      const edgeIds = edges.map((e) => unwrap(e, 'edge'));
-
-      if (contactMode && edgeIds.length === 1) {
-        const edgeId = edgeIds[0];
-        if (edgeId !== undefined) {
-          return solidHandle(
-            this.bk.sweepWithOptions(faceId, edgeId, contactMode, [], 0, 'transformed')
-          );
-        }
-      }
-
-      if (contactMode && edgeIds.length > 1) {
-        warnOnce(
-          'sweep-transition-multi-edge',
-          'Sweep transition mode not supported for multi-edge wires; ignored.'
-        );
-      }
-
-      const id = this.bk.sweepAlongEdges(faceId, edgeIds);
-      return solidHandle(id);
-    }
-
-    if (contactMode) {
-      const edgeId = unwrap(spine, 'edge');
-      return solidHandle(
-        this.bk.sweepWithOptions(faceId, edgeId, contactMode, [], 0, 'transformed')
-      );
-    }
-
-    const nurbsData = this.extractNurbsFromEdge(spine);
-    if (!nurbsData) {
-      throw new Error('brepkit: sweep spine must be an edge or wire');
-    }
-    const id = this.bk.sweep(
-      faceId,
-      nurbsData.degree,
-      nurbsData.knots,
-      nurbsData.controlPoints,
-      nurbsData.weights
-    );
-    return solidHandle(id);
+    return _sweep(this.bk, wire, spine, options);
   }
 
   simplePipe(profile: KernelShape, spine: KernelShape): KernelShape {
-    // If profile is a wire, convert to face first
-    const profileHandle = profile as BrepkitHandle;
-    const faceId =
-      profileHandle.type === 'wire'
-        ? this.bk.makeFaceFromWire(profileHandle.id)
-        : unwrap(profile, 'face');
-
-    const spineHandle = spine as BrepkitHandle;
-
-    if (spineHandle.type === 'wire') {
-      const edges = this.iterShapes(spine, 'edge');
-      const edgeIds = edges.map((e) => unwrap(e, 'edge'));
-      const id = this.bk.sweepAlongEdges(faceId, edgeIds);
-      return solidHandle(id);
-    }
-
-    const nurbsData = this.extractNurbsFromEdge(spine);
-    if (!nurbsData) {
-      throw new Error('brepkit: pipe spine must be an edge or wire');
-    }
-    const id = this.bk.pipe(
-      faceId,
-      nurbsData.degree,
-      nurbsData.knots,
-      nurbsData.controlPoints,
-      nurbsData.weights
-    );
-    return solidHandle(id);
+    return _simplePipe(this.bk, profile, spine);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1249,28 +794,7 @@ export class BrepkitAdapter implements KernelAdapter {
     edges: KernelShape[],
     radius: number | [number, number] | ((edge: KernelShape) => number | [number, number])
   ): KernelShape {
-    const solidId = unwrapSolidOrThrow(shape, 'fillet');
-    const edgeIds = edges.map((e) => unwrap(e, 'edge'));
-
-    // Constant radius — use the fast path
-    if (typeof radius === 'number') {
-      return solidHandle(this.bk.fillet(solidId, edgeIds, radius));
-    }
-
-    // Variable radius — build filletVariable spec
-    const spec: { edge: number; startRadius: number; endRadius: number }[] = [];
-    for (const [i, edge] of edges.entries()) {
-      const edgeId = edgeIds[i] ?? 0;
-      let r: number | [number, number];
-      if (typeof radius === 'function') {
-        r = radius(edge);
-      } else {
-        r = radius; // [number, number] tuple
-      }
-      const [startR, endR] = Array.isArray(r) ? r : [r, r];
-      spec.push({ edge: edgeId, startRadius: startR, endRadius: endR });
-    }
-    return solidHandle(this.bk.filletVariable(solidId, JSON.stringify(spec)));
+    return _fillet(this.bk, shape, edges, radius);
   }
 
   chamfer(
@@ -1278,55 +802,7 @@ export class BrepkitAdapter implements KernelAdapter {
     edges: KernelShape[],
     distance: number | [number, number] | ((edge: KernelShape) => number | [number, number])
   ): KernelShape {
-    const solidId = unwrapSolidOrThrow(shape, 'chamfer');
-    const edgeIds = edges.map((e) => unwrap(e, 'edge'));
-
-    if (typeof distance === 'number') {
-      return solidHandle(this.bk.chamfer(solidId, edgeIds, distance));
-    }
-
-    if (Array.isArray(distance)) {
-      const [d1, d2] = distance;
-      if (typeof this.bk.chamferAsymmetric === 'function') {
-        return solidHandle(this.bk.chamferAsymmetric(solidId, edgeIds, d1, d2));
-      }
-      // Fallback: average the two distances
-      warnOnce('chamfer-asymmetric', 'chamferAsymmetric not available; using averaged distance.');
-      return solidHandle(this.bk.chamfer(solidId, edgeIds, (d1 + d2) / 2));
-    }
-
-    // Callback mode: group edges by distance to batch atomically
-    // (avoids stale edge IDs from iterating one-by-one across topology changes)
-    const groups = new Map<string, { ids: number[]; d1: number; d2: number }>();
-    for (const [i, edge] of edges.entries()) {
-      const r = distance(edge);
-      const eid = edgeIds[i];
-      if (eid === undefined) continue;
-      const [d1, d2] = Array.isArray(r) ? r : [r, r];
-      const key = `${d1},${d2}`;
-      const group = groups.get(key);
-      if (group) {
-        group.ids.push(eid);
-      } else {
-        groups.set(key, { ids: [eid], d1, d2 });
-      }
-    }
-
-    let result = solidId;
-    for (const group of groups.values()) {
-      if (group.d1 === group.d2) {
-        result = this.bk.chamfer(result, group.ids, group.d1);
-      } else if (typeof this.bk.chamferAsymmetric === 'function') {
-        result = this.bk.chamferAsymmetric(result, group.ids, group.d1, group.d2);
-      } else {
-        warnOnce(
-          'chamfer-callback',
-          'chamferAsymmetric not available; asymmetric edges use averaged distance.'
-        );
-        result = this.bk.chamfer(result, group.ids, (group.d1 + group.d2) / 2);
-      }
-    }
-    return solidHandle(result);
+    return _chamfer(this.bk, shape, edges, distance);
   }
 
   chamferDistAngle(
@@ -1335,17 +811,7 @@ export class BrepkitAdapter implements KernelAdapter {
     distance: number,
     angleDeg: number
   ): KernelShape {
-    const d2 = distance * Math.tan((angleDeg * Math.PI) / 180);
-    const solidId = unwrapSolidOrThrow(shape, 'chamferDistAngle');
-    const edgeIds = edges.map((e) => unwrap(e, 'edge'));
-
-    if (typeof this.bk.chamferAsymmetric === 'function') {
-      return solidHandle(this.bk.chamferAsymmetric(solidId, edgeIds, distance, d2));
-    }
-
-    // Fallback: averaged symmetric chamfer
-    warnOnce('chamfer-dist-angle', 'chamferAsymmetric not available; using averaged distance.');
-    return solidHandle(this.bk.chamfer(solidId, edgeIds, (distance + d2) / 2));
+    return _chamferDistAngle(this.bk, shape, edges, distance, angleDeg);
   }
 
   shell(
@@ -1354,113 +820,11 @@ export class BrepkitAdapter implements KernelAdapter {
     thickness: number,
     tolerance?: number
   ): KernelShape {
-    if (tolerance !== undefined) {
-      warnOnce(
-        'shell-tolerance',
-        'shell() tolerance parameter is not supported; brepkit uses its own internal tolerance.'
-      );
-    }
-    const solidId = unwrapSolidOrThrow(shape, 'shell');
-    const solidFaces = toArray(this.bk.getSolidFaces(solidId));
-    const solidFaceSet = new Set(solidFaces);
-
-    // Re-resolve face IDs: if a face doesn't belong to the solid (e.g. after
-    // fillet changed face IDs), find the best matching face by normal direction.
-    const resolvedFaceIds = faces.map((f) => {
-      const fid = unwrap(f, 'face');
-      if (solidFaceSet.has(fid)) return fid;
-
-      // Face doesn't belong to this solid — match by geometry (normal)
-      try {
-        const origNormal = this.bk.getFaceNormal(fid);
-        let bestMatch = -1;
-        let bestDot = -2;
-        for (const sf of solidFaces) {
-          try {
-            const sn = this.bk.getFaceNormal(sf);
-            const dot =
-              (origNormal[0] ?? 0) * (sn[0] ?? 0) +
-              (origNormal[1] ?? 0) * (sn[1] ?? 0) +
-              (origNormal[2] ?? 0) * (sn[2] ?? 0);
-            if (dot > bestDot) {
-              bestDot = dot;
-              bestMatch = sf;
-            }
-          } catch {
-            // non-planar face, skip
-          }
-        }
-        if (bestMatch >= 0 && bestDot > 0.99) return bestMatch;
-      } catch {
-        // original face lookup failed
-      }
-
-      // Centroid-proximity fallback: compare average vertex positions
-      try {
-        const origVerts = toArray(this.bk.getFaceVertices(fid));
-        if (origVerts.length >= 1) {
-          let ox = 0,
-            oy = 0,
-            oz = 0;
-          for (const vid of origVerts) {
-            const pos = this.bk.getVertexPosition(vid);
-            ox += pos[0]!;
-            oy += pos[1]!;
-            oz += pos[2]!;
-          }
-          const n = origVerts.length;
-          ox /= n;
-          oy /= n;
-          oz /= n;
-
-          let bestCentroidMatch = -1;
-          let bestCentroidDist = Infinity;
-          for (const sf of solidFaces) {
-            try {
-              const sv = toArray(this.bk.getFaceVertices(sf));
-              if (sv.length < 1) continue;
-              let sx = 0,
-                sy = 0,
-                sz = 0;
-              for (const svid of sv) {
-                const spos = this.bk.getVertexPosition(svid);
-                sx += spos[0]!;
-                sy += spos[1]!;
-                sz += spos[2]!;
-              }
-              const sn = sv.length;
-              sx /= sn;
-              sy /= sn;
-              sz /= sn;
-              const dist = Math.sqrt((ox - sx) ** 2 + (oy - sy) ** 2 + (oz - sz) ** 2);
-              if (dist < bestCentroidDist) {
-                bestCentroidDist = dist;
-                bestCentroidMatch = sf;
-              }
-            } catch {
-              // vertex lookup failed for this face
-            }
-          }
-          if (bestCentroidMatch >= 0 && bestCentroidDist < 1e-3) return bestCentroidMatch;
-        }
-      } catch {
-        // original face vertex lookup failed
-      }
-
-      return fid; // fallback: pass original ID and let WASM validate
-    });
-
-    const id = this.bk.shell(solidId, thickness, resolvedFaceIds);
-    return solidHandle(id);
+    return _shell(this.bk, shape, faces, thickness, tolerance);
   }
 
   thicken(shape: KernelShape, thickness: number): KernelShape {
-    const h = shape as BrepkitHandle;
-    if (h.type === 'face') {
-      const id = this.bk.thicken(h.id, thickness);
-      return solidHandle(id);
-    }
-    throw new Error('brepkit: thicken() requires a face');
+    return _thicken(this.bk, shape, thickness);
   }
 
   offset(shape: KernelShape, distance: number, tolerance?: number): KernelShape {
@@ -3181,22 +2545,7 @@ export class BrepkitAdapter implements KernelAdapter {
     points: [number, number, number][],
     options?: { periodic?: boolean; tolerance?: number }
   ): KernelShape {
-    if (options?.tolerance !== undefined) {
-      warnOnce(
-        'interpolate-tolerance',
-        'interpolatePoints() tolerance parameter is not supported; brepkit uses chord-length parameterisation.'
-      );
-    }
-    if (points.length < 2) throw new Error('brepkit: need at least 2 points');
-    if (points.length === 2) {
-      return this.makeLineEdge(points[0]!, points[1]!);
-    }
-
-    // Use brepkit's proper NURBS interpolation (Gaussian solve + chord-length params)
-    const degree = Math.min(3, points.length - 1);
-    const coords = points.flatMap(([x, y, z]) => [x, y, z]);
-    const id = this.bk.interpolatePoints(coords, degree);
-    return edgeHandle(id);
+    return _interpolatePoints(this.bk, points, options);
   }
 
   approximatePoints(
@@ -3208,13 +2557,7 @@ export class BrepkitAdapter implements KernelAdapter {
       smoothing?: [number, number, number] | null;
     }
   ): KernelShape {
-    const degree = options?.degMax ?? 3;
-    const tol = options?.tolerance ?? 1e-6;
-    const coords: number[] = [];
-    for (const p of points) coords.push(p[0], p[1], p[2]);
-    const numCps = Math.max(degree + 1, Math.min(points.length, Math.ceil(points.length * 0.7)));
-    const id: number = this.bk.approximateCurveLspia(coords, degree, numCps, tol, 100);
-    return edgeHandle(id);
+    return _approximatePoints(this.bk, points, options);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -3533,61 +2876,27 @@ export class BrepkitAdapter implements KernelAdapter {
   // ═══════════════════════════════════════════════════════════════════════
 
   makeNonPlanarFace(wire: KernelShape): KernelShape {
-    // Attempt planar face creation (best effort)
-    return this.makeFace(wire, true);
+    return _makeNonPlanarFace(this.bk, wire);
   }
 
   addHolesInFace(face: KernelShape, holeWires: KernelShape[]): KernelShape {
-    const wireIds = holeWires.map((w) => unwrap(w, 'wire'));
-    const id = this.bk.addHolesToFace(unwrap(face, 'face'), wireIds);
-    return faceHandle(id);
+    return _addHolesInFace(this.bk, face, holeWires);
   }
 
   removeHolesFromFace(face: KernelShape): KernelShape {
-    const id = this.bk.removeHolesFromFace(unwrap(face, 'face'));
-    return faceHandle(id);
+    return _removeHolesFromFace(this.bk, face);
   }
 
   makeFaceOnSurface(_surface: KernelType, wire: KernelShape): KernelShape {
-    // brepkit doesn't have separate surface handles — just create a face from the wire
-    return this.makeFace(wire, true);
+    return _makeFaceOnSurface(this.bk, _surface, wire);
   }
 
   bsplineSurface(points: [number, number, number][], rows: number, cols: number): KernelShape {
-    // Use WASM NURBS surface interpolation for a proper B-spline surface
-    const coords: number[] = [];
-    for (const [x, y, z] of points) {
-      coords.push(x, y, z);
-    }
-    const degreeU = Math.min(3, rows - 1);
-    const degreeV = Math.min(3, cols - 1);
-    try {
-      const faceId = this.bk.interpolateSurface(coords, rows, cols, degreeU, degreeV);
-      return faceHandle(faceId);
-    } catch {
-      // Fall back to triangulated mesh if surface interpolation fails
-      return this.triangulatedSurface(points, rows, cols);
-    }
+    return _bsplineSurface(this.bk, points, rows, cols);
   }
 
   triangulatedSurface(points: [number, number, number][], rows: number, cols: number): KernelShape {
-    // Build triangle faces from a grid of points, sew into a solid/shell
-    const faces: KernelShape[] = [];
-    for (let r = 0; r < rows - 1; r++) {
-      for (let c = 0; c < cols - 1; c++) {
-        const i00 = r * cols + c;
-        const i10 = (r + 1) * cols + c;
-        const i01 = r * cols + (c + 1);
-        const i11 = (r + 1) * cols + (c + 1);
-        // Two triangles per quad
-        const f1 = this.buildTriFace(points[i00]!, points[i10]!, points[i01]!);
-        if (f1) faces.push(f1);
-        const f2 = this.buildTriFace(points[i10]!, points[i11]!, points[i01]!);
-        if (f2) faces.push(f2);
-      }
-    }
-    if (faces.length === 0) throw new Error('brepkit: no valid faces in surface grid');
-    return this.sew(faces, 1e-6);
+    return _triangulatedSurface(this.bk, points, rows, cols);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -3599,34 +2908,11 @@ export class BrepkitAdapter implements KernelAdapter {
     b: [number, number, number],
     c: [number, number, number]
   ): KernelShape | null {
-    // Check for degeneracy
-    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-    const ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-    const cross = [
-      ab[1]! * ac[2]! - ab[2]! * ac[1]!,
-      ab[2]! * ac[0]! - ab[0]! * ac[2]!,
-      ab[0]! * ac[1]! - ab[1]! * ac[0]!,
-    ];
-    const area = Math.sqrt(cross[0]! ** 2 + cross[1]! ** 2 + cross[2]! ** 2);
-    if (area < 1e-12) return null;
-
-    try {
-      const e1 = this.makeLineEdge(a, b);
-      const e2 = this.makeLineEdge(b, c);
-      const e3 = this.makeLineEdge(c, a);
-      const wire = this.makeWire([e1, e2, e3]);
-      return this.makeFace(wire);
-    } catch (e: unknown) {
-      console.warn('brepkit: makeNonPlanarFace failed:', e);
-      return null;
-    }
+    return _buildTriFace(this.bk, a, b, c);
   }
 
   sewAndSolidify(faces: KernelShape[], tolerance: number): KernelShape {
-    const faceIds = faces.map((s) => unwrap(s, 'face'));
-    // sewFaces returns a solid handle directly — no need for solidFromShell
-    const solidId = this.bk.sewFaces(faceIds, tolerance);
-    return solidHandle(solidId);
+    return _sewAndSolidify(this.bk, faces, tolerance);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -3977,51 +3263,33 @@ export class BrepkitAdapter implements KernelAdapter {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Kernel2DCapability (stubs — returns false from supportsKernel2D)
+  // Kernel2DCapability — delegates to kernel2dOps.ts
   // ═══════════════════════════════════════════════════════════════════════
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Kernel2DCapability — pure TypeScript implementation
-  // ═══════════════════════════════════════════════════════════════════════
-
-  private c2d(h: Curve2dHandle): Curve2dObj {
-    return h as Curve2dObj;
-  }
-  /** Unwrap any trimmed wrappers to get the underlying geometry. */
-  private c2dBasis(h: Curve2dHandle): Curve2dObj {
-    let c = this.c2d(h);
-    while (c.__bk2d === 'trimmed') c = c.basis;
-    return c;
-  }
-  private bb2d(h: BBox2dHandle): BkBBox2d {
-    return h as BkBBox2d;
-  }
 
   createPoint2d(x: number, y: number): KernelType {
-    return { x, y };
+    return _createPoint2d(x, y);
   }
   createDirection2d(x: number, y: number): KernelType {
-    const l = Math.sqrt(x * x + y * y);
-    return { x: x / l, y: y / l };
+    return _createDirection2d(x, y);
   }
   createVector2d(x: number, y: number): KernelType {
-    return { x, y };
+    return _createVector2d(x, y);
   }
   createAxis2d(px: number, py: number, dx: number, dy: number): KernelType {
-    return { px, py, dx, dy, delete: noop } as KernelType;
+    return _createAxis2d(px, py, dx, dy);
   }
   wrapCurve2dHandle(handle: KernelType): Curve2dHandle {
-    return handle;
+    return _wrapCurve2dHandle(handle);
   }
   createCurve2dAdaptor(handle: Curve2dHandle): KernelType {
-    return handle;
+    return _createCurve2dAdaptor(handle);
   }
 
   makeLine2d(x1: number, y1: number, x2: number, y2: number): Curve2dHandle {
-    return bk2d.makeLine2d(x1, y1, x2, y2);
+    return _makeLine2d(x1, y1, x2, y2);
   }
   makeCircle2d(cx: number, cy: number, radius: number, sense?: boolean): Curve2dHandle {
-    return bk2d.makeCircle2d(cx, cy, radius, sense);
+    return _makeCircle2d(cx, cy, radius, sense);
   }
   makeArc2dThreePoints(
     x1: number,
@@ -4031,51 +3299,7 @@ export class BrepkitAdapter implements KernelAdapter {
     x2: number,
     y2: number
   ): Curve2dHandle {
-    // Circumscribed circle through 3 points
-    const d = 2 * (x1 * (ym - y2) + xm * (y2 - y1) + x2 * (y1 - ym));
-    if (Math.abs(d) < 1e-12) {
-      // Degenerate (collinear): return a line
-      return bk2d.makeLine2d(x1, y1, x2, y2);
-    }
-    const cx =
-      ((x1 * x1 + y1 * y1) * (ym - y2) +
-        (xm * xm + ym * ym) * (y2 - y1) +
-        (x2 * x2 + y2 * y2) * (y1 - ym)) /
-      d;
-    const cy =
-      ((x1 * x1 + y1 * y1) * (x2 - xm) +
-        (xm * xm + ym * ym) * (x1 - x2) +
-        (x2 * x2 + y2 * y2) * (xm - x1)) /
-      d;
-    const radius = Math.sqrt((x1 - cx) ** 2 + (y1 - cy) ** 2);
-
-    // Compute angles for start (p1), mid (pm), and end (p2)
-    const a1 = Math.atan2(y1 - cy, x1 - cx);
-    const am = Math.atan2(ym - cy, xm - cx);
-    const a2 = Math.atan2(y2 - cy, x2 - cx);
-
-    // Determine sense: CCW if mid-point angle is between start and end going CCW
-    let da1m = am - a1;
-    if (da1m < 0) da1m += 2 * Math.PI;
-    let da12 = a2 - a1;
-    if (da12 < 0) da12 += 2 * Math.PI;
-    const sense = da1m < da12; // CCW if midpoint comes before endpoint
-
-    const circle = bk2d.makeCircle2d(cx, cy, radius, sense);
-    if (!sense) {
-      // CW circle evaluates angle = -t, so parameter t = -angle.
-      // Map start/end angles to the CW parameter space.
-      const tStart = -a1;
-      let tEnd = -a2;
-      // Ensure tEnd >= tStart so the linear interpolation
-      // tStart + t*(tEnd-tStart) traverses the arc in the correct (CW) direction.
-      if (tEnd < tStart - 1e-9) tEnd += 2 * Math.PI;
-      return { __bk2d: 'trimmed', basis: circle, tStart, tEnd } as Curve2dObj;
-    }
-    // CCW: ensure tEnd >= tStart so interpolation goes in the CCW direction.
-    let tEnd = a2;
-    if (tEnd < a1 - 1e-9) tEnd += 2 * Math.PI;
-    return { __bk2d: 'trimmed', basis: circle, tStart: a1, tEnd } as Curve2dObj;
+    return _makeArc2dThreePoints(x1, y1, xm, ym, x2, y2);
   }
   makeArc2dTangent(
     sx: number,
@@ -4085,55 +3309,7 @@ export class BrepkitAdapter implements KernelAdapter {
     ex: number,
     ey: number
   ): Curve2dHandle {
-    // Exact tangent arc: find circle center C where:
-    //   (C - S) · T = 0        (tangent constraint)
-    //   |C - S| = |C - E|      (equidistant = on circle)
-    // Solution: C = S + t * perp(T), with t = -chord² / (2 * ((sy-ey)*ntx - (sx-ex)*nty))
-    const len = Math.sqrt(tx * tx + ty * ty);
-    const ntx = len > 0 ? tx / len : 0;
-    const nty = len > 0 ? ty / len : 0;
-
-    const dx = sx - ex;
-    const dy = sy - ey;
-    const denom = 2 * (dy * ntx - dx * nty);
-
-    if (Math.abs(denom) < 1e-12) {
-      // Degenerate: tangent parallel to S→E chord
-      return bk2d.makeLine2d(sx, sy, ex, ey);
-    }
-
-    const chord2 = dx * dx + dy * dy;
-    const t = -chord2 / denom;
-    const cx = sx - t * nty;
-    const cy = sy + t * ntx;
-    const radius = Math.abs(t);
-
-    // Pick the arc midpoint on the correct side (matching tangent direction).
-    const a1 = Math.atan2(sy - cy, sx - cx);
-    const a2 = Math.atan2(ey - cy, ex - cx);
-
-    // At S the CCW tangent is perpendicular to the radius: (-sin(a1), cos(a1))
-    const ccwTanX = -(sy - cy) / radius;
-    const ccwTanY = (sx - cx) / radius;
-    const dotCcw = ntx * ccwTanX + nty * ccwTanY;
-
-    let aMid: number;
-    if (dotCcw > 0) {
-      // CCW arc from S to E
-      let da = a2 - a1;
-      if (da <= 0) da += 2 * Math.PI;
-      aMid = a1 + da / 2;
-    } else {
-      // CW arc from S to E
-      let da = a2 - a1;
-      if (da >= 0) da -= 2 * Math.PI;
-      aMid = a1 + da / 2;
-    }
-
-    const mx = cx + radius * Math.cos(aMid);
-    const my = cy + radius * Math.sin(aMid);
-
-    return this.makeArc2dThreePoints(sx, sy, mx, my, ex, ey);
+    return _makeArc2dTangent(sx, sy, tx, ty, ex, ey);
   }
   makeEllipse2d(
     cx: number,
@@ -4144,7 +3320,7 @@ export class BrepkitAdapter implements KernelAdapter {
     xDirY?: number,
     sense?: boolean
   ): Curve2dHandle {
-    return bk2d.makeEllipse2d(cx, cy, major, minor, xDirX, xDirY, sense);
+    return _makeEllipse2d(cx, cy, major, minor, xDirX, xDirY, sense);
   }
   makeEllipseArc2d(
     cx: number,
@@ -4157,98 +3333,55 @@ export class BrepkitAdapter implements KernelAdapter {
     xDirY?: number,
     sense?: boolean
   ): Curve2dHandle {
-    const ellipse = bk2d.makeEllipse2d(cx, cy, major, minor, xDirX, xDirY, sense);
-    return { __bk2d: 'trimmed', basis: ellipse, tStart: start, tEnd: end } as Curve2dObj;
+    return _makeEllipseArc2d(cx, cy, major, minor, start, end, xDirX, xDirY, sense);
   }
   makeBezier2d(points: [number, number][]): Curve2dHandle {
-    return bk2d.makeBezier2d(points);
+    return _makeBezier2d(points);
   }
   makeBSpline2d(points: [number, number][], _options?: Record<string, unknown>): Curve2dHandle {
-    // Approximate: use points as control points with uniform knots
-    const n = points.length;
-    const degree = Math.min(3, n - 1);
-    const knots: number[] = [];
-    const mults: number[] = [];
-    knots.push(0);
-    mults.push(degree + 1);
-    const nInternal = n - degree - 1;
-    for (let i = 1; i <= nInternal; i++) {
-      knots.push(i / (nInternal + 1));
-      mults.push(1);
-    }
-    knots.push(1);
-    mults.push(degree + 1);
-    return {
-      __bk2d: 'bspline',
-      poles: [...points],
-      knots,
-      multiplicities: mults,
-      degree,
-      isPeriodic: false,
-    } as Curve2dObj;
+    return _makeBSpline2d(points, _options);
   }
 
   evaluateCurve2d(curve: Curve2dHandle, param: number): [number, number] {
-    return bk2d.evaluateCurve2d(this.c2d(curve), param);
+    return _evaluateCurve2d(curve, param);
   }
   evaluateCurve2dD1(
     curve: Curve2dHandle,
     param: number
   ): { point: [number, number]; tangent: [number, number] } {
-    return {
-      point: bk2d.evaluateCurve2d(this.c2d(curve), param),
-      tangent: bk2d.tangentCurve2d(this.c2d(curve), param),
-    };
+    return _evaluateCurve2dD1(curve, param);
   }
   getCurve2dBounds(curve: Curve2dHandle): { first: number; last: number } {
-    return bk2d.curveBounds(this.c2d(curve));
+    return _getCurve2dBounds(curve);
   }
   getCurve2dType(curve: Curve2dHandle): string {
-    // Unwrap trimmed curves to report the basis type (matches OCCT adaptor behavior)
-    return bk2d.curveTypeName(this.c2dBasis(curve));
+    return _getCurve2dType(curve);
   }
 
   trimCurve2d(curve: Curve2dHandle, start: number, end: number): Curve2dHandle {
-    return { __bk2d: 'trimmed', basis: this.c2d(curve), tStart: start, tEnd: end } as Curve2dObj;
+    return _trimCurve2d(curve, start, end);
   }
   reverseCurve2d(_curve: Curve2dHandle): void {
-    /* Mutates in-place — no-op for immutable objects */
+    _reverseCurve2d(_curve);
   }
   copyCurve2d(curve: Curve2dHandle): Curve2dHandle {
-    return JSON.parse(JSON.stringify(curve));
+    return _copyCurve2d(curve);
   }
   offsetCurve2d(curve: Curve2dHandle, offset: number): Curve2dHandle {
-    // Approximate: sample the curve, offset each point by the normal, rebuild
-    const c = this.c2d(curve);
-    const bounds = bk2d.curveBounds(c);
-    const N = 30;
-    const poles: [number, number][] = [];
-    for (let i = 0; i <= N; i++) {
-      const t = bounds.first + ((bounds.last - bounds.first) * i) / N;
-      const [px, py] = bk2d.evaluateCurve2d(c, t);
-      const [tx, ty] = bk2d.tangentCurve2d(c, t);
-      const tLen = Math.sqrt(tx * tx + ty * ty);
-      if (tLen > 1e-12) {
-        // Normal = perpendicular to tangent
-        poles.push([px - (ty / tLen) * offset, py + (tx / tLen) * offset]);
-      } else {
-        poles.push([px, py]);
-      }
-    }
-    return this.makeBSpline2d(poles);
+    return _offsetCurve2d(curve, offset);
   }
 
   translateCurve2d(curve: Curve2dHandle, dx: number, dy: number): Curve2dHandle {
-    return bk2d.translateCurve2d(this.c2d(curve), dx, dy);
+    return _translateCurve2d(curve, dx, dy);
   }
   rotateCurve2d(curve: Curve2dHandle, angle: number, cx: number, cy: number): Curve2dHandle {
-    return bk2d.rotateCurve2d(this.c2d(curve), angle, cx, cy);
+    return _rotateCurve2d(curve, angle, cx, cy);
   }
   scaleCurve2d(curve: Curve2dHandle, factor: number, cx: number, cy: number): Curve2dHandle {
-    return bk2d.scaleCurve2d(this.c2d(curve), factor, cx, cy);
+    return _scaleCurve2d(curve, factor, cx, cy);
   }
   mirrorCurve2dAtPoint(curve: Curve2dHandle, cx: number, cy: number): Curve2dHandle {
-    return bk2d.mirrorAtPoint(this.c2d(curve), cx, cy);
+    return _mirrorCurve2dAtPoint(curve, cx, cy);
   }
   mirrorCurve2dAcrossAxis(
     curve: Curve2dHandle,
@@ -4257,7 +3390,7 @@ export class BrepkitAdapter implements KernelAdapter {
     dx: number,
     dy: number
   ): Curve2dHandle {
-    return bk2d.mirrorAcrossAxis(this.c2d(curve), ox, oy, dx, dy);
+    return _mirrorCurve2dAcrossAxis(curve, ox, oy, dx, dy);
   }
   affinityTransform2d(
     curve: Curve2dHandle,
@@ -4267,51 +3400,17 @@ export class BrepkitAdapter implements KernelAdapter {
     dy: number,
     ratio: number
   ): Curve2dHandle {
-    // Affinity: scale the perpendicular component of each point relative to the axis
-    // axis direction (dx,dy), perpendicular (-dy,dx)
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 1e-15) return this.c2d(curve);
-    const ax = dx / len,
-      ay = dy / len;
-    // Build 2x2 affinity matrix: M = I + (ratio-1) * perp ⊗ perp
-    // perp = (-ay, ax)
-    const px = -ay,
-      py = ax;
-    const k = ratio - 1;
-    // M = [[1+k*px*px, k*px*py], [k*py*px, 1+k*py*py]]
-    const m00 = 1 + k * px * px,
-      m01 = k * px * py;
-    const m10 = k * py * px,
-      m11 = 1 + k * py * py;
-    const txOff = ox - m00 * ox - m01 * oy;
-    const tyOff = oy - m10 * ox - m11 * oy;
-    // Apply via GTrsf
-    const gtrsf = { m: [m00, m01, 0, m10, m11, 0, 0, 0, 1], tx: txOff, ty: tyOff };
-    return this.transformCurve2dGeneral(curve, gtrsf);
+    return _affinityTransform2d(curve, ox, oy, dx, dy, ratio);
   }
 
-  // --- General 2D transforms (stored as 3×3 matrices) ---
-  // All GTrsf2d methods return objects with a no-op .delete() to match OCCT's
-  // Emscripten WASM objects, which callers (e.g. curves.ts) rely on for cleanup.
-  private _gtrsf(m: number[], tx: number, ty: number): KernelType {
-    return { m, tx, ty, delete: noop } as KernelType;
-  }
   createIdentityGTrsf2d(): KernelType {
-    return this._gtrsf([1, 0, 0, 0, 1, 0, 0, 0, 1], 0, 0);
+    return _createIdentityGTrsf2d();
   }
   createAffinityGTrsf2d(ox: number, oy: number, dx: number, dy: number, ratio: number): KernelType {
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 1e-15) return this.createIdentityGTrsf2d();
-    const px = -dy / len,
-      py = dx / len; // perpendicular to axis
-    const k = ratio - 1;
-    const m = [1 + k * px * px, k * px * py, 0, k * py * px, 1 + k * py * py, 0, 0, 0, 1];
-    const txv = ox - m[0]! * ox - m[1]! * oy;
-    const tyv = oy - m[3]! * ox - m[4]! * oy;
-    return this._gtrsf(m, txv, tyv);
+    return _createAffinityGTrsf2d(ox, oy, dx, dy, ratio);
   }
   createTranslationGTrsf2d(dx: number, dy: number): KernelType {
-    return this._gtrsf([1, 0, 0, 0, 1, 0, 0, 0, 1], dx, dy);
+    return _createTranslationGTrsf2d(dx, dy);
   }
   createMirrorGTrsf2d(
     cx: number,
@@ -4322,159 +3421,37 @@ export class BrepkitAdapter implements KernelAdapter {
     dx?: number,
     dy?: number
   ): KernelType {
-    if (mode === 'axis' && dx !== undefined && dy !== undefined) {
-      // Mirror across axis through (ox ?? cx, oy ?? cy) with direction (dx, dy)
-      const len = Math.sqrt(dx * dx + dy * dy);
-      const nx = dx / len,
-        ny = dy / len;
-      // Reflection matrix: R = 2*n*nT - I
-      const m = [2 * nx * nx - 1, 2 * nx * ny, 0, 2 * nx * ny, 2 * ny * ny - 1, 0, 0, 0, 1];
-      const px = ox ?? cx,
-        py = oy ?? cy;
-      // Translation: p - R*p
-      const txv = px - m[0]! * px - m[1]! * py;
-      const tyv = py - m[3]! * px - m[4]! * py;
-      return this._gtrsf(m, txv, tyv);
-    }
-    // Point mirror at (cx, cy)
-    return this._gtrsf([-1, 0, 0, 0, -1, 0, 0, 0, 1], 2 * cx, 2 * cy);
+    return _createMirrorGTrsf2d(cx, cy, mode, ox, oy, dx, dy);
   }
   createRotationGTrsf2d(angle: number, cx: number, cy: number): KernelType {
-    const c = Math.cos(angle),
-      s = Math.sin(angle);
-    return this._gtrsf([c, -s, 0, s, c, 0, 0, 0, 1], cx - c * cx + s * cy, cy - s * cx - c * cy);
+    return _createRotationGTrsf2d(angle, cx, cy);
   }
   createScaleGTrsf2d(factor: number, cx: number, cy: number): KernelType {
-    return this._gtrsf([factor, 0, 0, 0, factor, 0, 0, 0, 1], cx * (1 - factor), cy * (1 - factor));
+    return _createScaleGTrsf2d(factor, cx, cy);
   }
   setGTrsf2dTranslationPart(gtrsf: KernelType, dx: number, dy: number): void {
-    gtrsf.tx = dx;
-    gtrsf.ty = dy;
+    _setGTrsf2dTranslationPart(gtrsf, dx, dy);
   }
   multiplyGTrsf2d(base: KernelType, other: KernelType): void {
-    // Full 3×3 matrix multiply: base = base * other
-    const a = base.m as number[],
-      b = other.m as number[];
-    const r = [
-      a[0]! * b[0]! + a[1]! * b[3]! + a[2]! * b[6]!,
-      a[0]! * b[1]! + a[1]! * b[4]! + a[2]! * b[7]!,
-      a[0]! * b[2]! + a[1]! * b[5]! + a[2]! * b[8]!,
-      a[3]! * b[0]! + a[4]! * b[3]! + a[5]! * b[6]!,
-      a[3]! * b[1]! + a[4]! * b[4]! + a[5]! * b[7]!,
-      a[3]! * b[2]! + a[4]! * b[5]! + a[5]! * b[8]!,
-      a[6]! * b[0]! + a[7]! * b[3]! + a[8]! * b[6]!,
-      a[6]! * b[1]! + a[7]! * b[4]! + a[8]! * b[7]!,
-      a[6]! * b[2]! + a[7]! * b[5]! + a[8]! * b[8]!,
-    ];
-    base.m = r;
-    const oldTx = base.tx as number,
-      oldTy = base.ty as number;
-    const otx = Number(other.tx) || 0,
-      oty = Number(other.ty) || 0;
-    base.tx = a[0]! * otx + a[1]! * oty + oldTx;
-    base.ty = a[3]! * otx + a[4]! * oty + oldTy;
+    _multiplyGTrsf2d(base, other);
   }
   transformCurve2dGeneral(curve: Curve2dHandle, gtrsf: KernelType): Curve2dHandle {
-    // Apply full affine transform: sample curve, transform points, refit as Bezier
-    const c = this.c2d(curve);
-    const m = (gtrsf.m as number[] | undefined) ?? [1, 0, 0, 0, 1, 0, 0, 0, 1];
-    const tx = Number(gtrsf.tx) || 0,
-      ty = Number(gtrsf.ty) || 0;
-    // If transform is just a translation, use fast path
-    const isIdentityMatrix =
-      Math.abs(m[0]! - 1) < 1e-12 &&
-      Math.abs(m[4]! - 1) < 1e-12 &&
-      Math.abs(m[1]!) < 1e-12 &&
-      Math.abs(m[3]!) < 1e-12;
-    if (isIdentityMatrix) {
-      return bk2d.translateCurve2d(c, tx, ty);
-    }
-    // General: sample, transform, refit as Bezier polyline
-    const bounds = bk2d.curveBounds(c);
-    const N = 20;
-    const pts: [number, number][] = [];
-    for (let i = 0; i <= N; i++) {
-      const t = bounds.first + ((bounds.last - bounds.first) * i) / N;
-      const [px, py] = bk2d.evaluateCurve2d(c, t);
-      pts.push([m[0]! * px + m[1]! * py + tx, m[3]! * px + m[4]! * py + ty]);
-    }
-    return bk2d.makeBezier2d(pts);
+    return _transformCurve2dGeneral(curve, gtrsf);
   }
 
-  // --- 2D intersection & distance ---
   intersectCurves2d(
     c1: Curve2dHandle,
     c2: Curve2dHandle,
     tolerance: number
   ): { points: [number, number][]; segments: Curve2dHandle[] } {
-    const result = bk2d.intersectCurves2dFn(this.c2d(c1), this.c2d(c2), tolerance);
-    // Wrap segment Curve2dObj as Curve2dHandle (add no-op delete for OCCT compat)
-    const segments: Curve2dHandle[] = result.segments.map((s) =>
-      Object.assign(s, {
-        delete() {
-          /* no-op */
-        },
-      })
-    );
-    return { points: result.points, segments };
+    return _intersectCurves2d(c1, c2, tolerance);
   }
   projectPointOnCurve2d(
     curve: Curve2dHandle,
     x: number,
     y: number
   ): { param: number; distance: number } | null {
-    const c = this.c2d(curve);
-    const bounds = bk2d.curveBounds(c);
-
-    // Analytic projection for untrimmed lines
-    if (c.__bk2d === 'line') {
-      const dx = x - c.ox;
-      const dy = y - c.oy;
-      const t = Math.max(bounds.first, Math.min(bounds.last, dx * c.dx + dy * c.dy));
-      const [px, py] = bk2d.evaluateCurve2d(c, t);
-      return { param: t, distance: Math.sqrt((px - x) ** 2 + (py - y) ** 2) };
-    }
-
-    // Analytic projection for untrimmed circles
-    if (c.__bk2d === 'circle') {
-      const angle = Math.atan2(y - c.cy, x - c.cx);
-      let t = c.sense ? angle : -angle;
-      while (t < 0) t += 2 * Math.PI;
-      while (t > 2 * Math.PI) t -= 2 * Math.PI;
-      const [px, py] = bk2d.evaluateCurve2d(c, t);
-      return { param: t, distance: Math.sqrt((px - x) ** 2 + (py - y) ** 2) };
-    }
-
-    // General: brute-force + Newton refinement (handles trimmed, ellipse, bezier, bspline)
-    if (!isFinite(bounds.first) || !isFinite(bounds.last)) return null;
-    let bestT = bounds.first;
-    let bestDist = Infinity;
-    const N = 200;
-    const dt = (bounds.last - bounds.first) / N;
-    for (let i = 0; i <= N; i++) {
-      const t = bounds.first + i * dt;
-      const [px, py] = bk2d.evaluateCurve2d(c, t);
-      const d = (px - x) ** 2 + (py - y) ** 2;
-      if (d < bestDist) {
-        bestDist = d;
-        bestT = t;
-      }
-    }
-    // Newton refinement: minimize f(t) = |C(t) - P|^2
-    // f'(t) = 2 * dot(C(t) - P, C'(t))
-    for (let iter = 0; iter < 10; iter++) {
-      const [px, py] = bk2d.evaluateCurve2d(c, bestT);
-      const [tx, ty] = bk2d.tangentCurve2d(c, bestT);
-      const dot = (px - x) * tx + (py - y) * ty;
-      const denom = tx * tx + ty * ty;
-      if (denom < 1e-20) break;
-      const step = dot / denom;
-      const newT = Math.max(bounds.first, Math.min(bounds.last, bestT - step));
-      if (Math.abs(newT - bestT) < 1e-14) break;
-      bestT = newT;
-    }
-    const [fx, fy] = bk2d.evaluateCurve2d(c, bestT);
-    return { param: bestT, distance: Math.sqrt((fx - x) ** 2 + (fy - y) ** 2) };
+    return _projectPointOnCurve2d(curve, x, y);
   }
   distanceBetweenCurves2d(
     c1: Curve2dHandle,
@@ -4484,57 +3461,7 @@ export class BrepkitAdapter implements KernelAdapter {
     p2s: number,
     p2e: number
   ): number {
-    const curve1 = this.c2d(c1);
-    const curve2 = this.c2d(c2);
-
-    // Phase 1: 50x50 grid scan
-    let bestT1 = p1s;
-    let bestT2 = p2s;
-    let minDistSq = Infinity;
-    const N = 50;
-    for (let i = 0; i <= N; i++) {
-      const t1 = p1s + ((p1e - p1s) * i) / N;
-      const [x1, y1] = bk2d.evaluateCurve2d(curve1, t1);
-      for (let j = 0; j <= N; j++) {
-        const t2 = p2s + ((p2e - p2s) * j) / N;
-        const [x2, y2] = bk2d.evaluateCurve2d(curve2, t2);
-        const d = (x2 - x1) ** 2 + (y2 - y1) ** 2;
-        if (d < minDistSq) {
-          minDistSq = d;
-          bestT1 = t1;
-          bestT2 = t2;
-        }
-      }
-    }
-
-    // Phase 2: Alternating projection refinement
-    let t1 = bestT1;
-    let t2 = bestT2;
-    for (let iter = 0; iter < 20; iter++) {
-      // Fix t2, project C2(t2) onto C1 to refine t1
-      const [x2, y2] = bk2d.evaluateCurve2d(curve2, t2);
-      const proj1 = this.projectPointOnCurve2d(c1, x2, y2);
-      if (proj1) {
-        const newT1 = Math.max(p1s, Math.min(p1e, proj1.param));
-        const converged1 = Math.abs(newT1 - t1) < 1e-12;
-        t1 = newT1;
-        if (converged1) break;
-      }
-
-      // Fix t1, project C1(t1) onto C2 to refine t2
-      const [x1, y1] = bk2d.evaluateCurve2d(curve1, t1);
-      const proj2 = this.projectPointOnCurve2d(c2, x1, y1);
-      if (proj2) {
-        const newT2 = Math.max(p2s, Math.min(p2e, proj2.param));
-        const converged2 = Math.abs(newT2 - t2) < 1e-12;
-        t2 = newT2;
-        if (converged2) break;
-      }
-    }
-
-    const [fx1, fy1] = bk2d.evaluateCurve2d(curve1, t1);
-    const [fx2, fy2] = bk2d.evaluateCurve2d(curve2, t2);
-    return Math.sqrt((fx2 - fx1) ** 2 + (fy2 - fy1) ** 2);
+    return _distanceBetweenCurves2d(c1, c2, p1s, p1e, p2s, p2e);
   }
 
   approximateCurve2dAsBSpline(
@@ -4543,150 +3470,46 @@ export class BrepkitAdapter implements KernelAdapter {
     cont: 'C0' | 'C1' | 'C2' | 'C3',
     maxSeg: number
   ): Curve2dHandle {
-    // Sample the curve densely and build a B-spline approximation
-    const c = this.c2d(curve);
-    const bounds = bk2d.curveBounds(c);
-
-    // Map continuity to minimum degree
-    const contDeg = cont === 'C0' ? 1 : cont === 'C1' ? 2 : cont === 'C2' ? 3 : 4;
-    const degree = Math.max(3, contDeg);
-
-    // Start with 100 samples, adaptively increase if error exceeds tolerance
-    let N = Math.max(100, maxSeg * 10);
-    let poles: [number, number][] = [];
-    let maxErr = Infinity;
-
-    for (let attempt = 0; attempt < 3 && maxErr > tol; attempt++) {
-      poles = [];
-      for (let i = 0; i <= N; i++) {
-        const t = bounds.first + ((bounds.last - bounds.first) * i) / N;
-        poles.push(bk2d.evaluateCurve2d(c, t));
-      }
-
-      // Check approximation error at midpoints between samples
-      maxErr = 0;
-      for (let i = 0; i < N; i++) {
-        const tMid = bounds.first + ((bounds.last - bounds.first) * (i + 0.5)) / N;
-        const [ex, ey] = bk2d.evaluateCurve2d(c, tMid);
-        // Linear interp between adjacent samples
-        const p0 = poles[i]!;
-        const p1 = poles[i + 1]!;
-        const mx = (p0[0] + p1[0]) / 2;
-        const my = (p0[1] + p1[1]) / 2;
-        const err = Math.sqrt((ex - mx) ** 2 + (ey - my) ** 2);
-        if (err > maxErr) maxErr = err;
-      }
-
-      if (maxErr > tol) N = Math.min(N * 2, 500);
-    }
-
-    return this.makeBSpline2d(poles, { degMax: degree });
+    return _approximateCurve2dAsBSpline(curve, tol, cont, maxSeg);
   }
   decomposeBSpline2dToBeziers(curve: Curve2dHandle): Curve2dHandle[] {
-    const c = this.c2dBasis(curve);
-    if (c.__bk2d === 'bezier') return [curve];
-    if (c.__bk2d !== 'bspline') {
-      // For other types, approximate as B-spline first, then decompose
-      const approx = this.approximateCurve2dAsBSpline(curve, 1e-6, 'C2', 10);
-      return this.decomposeBSpline2dToBeziers(approx);
-    }
-    // Convert B-spline to cubic Bezier(s) via Hermite interpolation.
-    // For multi-span B-splines, split at internal knots.
-    // Use the original (possibly trimmed) curve bounds, not the basis bounds,
-    // so only Bezier segments within the trim range are emitted.
-    const trimBounds = bk2d.curveBounds(this.c2d(curve));
-    const first = trimBounds.first;
-    const last = trimBounds.last;
-    // Collect unique internal knots
-    const internalKnots: number[] = [];
-    for (const k of c.knots) {
-      if (k > first + 1e-12 && k < last - 1e-12) internalKnots.push(k);
-    }
-    const breakpoints = [first, ...internalKnots, last];
-    const result: Curve2dHandle[] = [];
-    for (let i = 0; i < breakpoints.length - 1; i++) {
-      const t0 = breakpoints[i]!;
-      const t1 = breakpoints[i + 1]!;
-      const span = t1 - t0;
-      if (span < 1e-15) continue;
-      const p0 = bk2d.evaluateCurve2d(c, t0);
-      const p3 = bk2d.evaluateCurve2d(c, t1);
-      const tan0 = bk2d.tangentCurve2d(c, t0);
-      const tan3 = bk2d.tangentCurve2d(c, t1);
-      const s = span / 3;
-      const bezier: Curve2dObj = {
-        __bk2d: 'bezier',
-        poles: [
-          p0,
-          [p0[0] + tan0[0] * s, p0[1] + tan0[1] * s],
-          [p3[0] - tan3[0] * s, p3[1] - tan3[1] * s],
-          p3,
-        ],
-      };
-      result.push(bezier as Curve2dHandle);
-    }
-    return result.length > 0 ? result : [curve];
+    return _decomposeBSpline2dToBeziers(curve);
   }
 
-  // --- 2D bounding boxes ---
   createBoundingBox2d(): BBox2dHandle {
-    return bk2d.createBBox2d();
+    return _createBoundingBox2d();
   }
   addCurveToBBox2d(bbox: BBox2dHandle, curve: Curve2dHandle, tol: number): void {
-    bk2d.addCurveToBBox(this.bb2d(bbox), this.c2d(curve), tol);
+    _addCurveToBBox2d(bbox, curve, tol);
   }
   getBBox2dBounds(bbox: BBox2dHandle): { xMin: number; yMin: number; xMax: number; yMax: number } {
-    const b = this.bb2d(bbox);
-    return { xMin: b.xMin, yMin: b.yMin, xMax: b.xMax, yMax: b.yMax };
+    return _getBBox2dBounds(bbox);
   }
   mergeBBox2d(target: BBox2dHandle, other: BBox2dHandle): void {
-    const t = this.bb2d(target),
-      o = this.bb2d(other);
-    t.xMin = Math.min(t.xMin, o.xMin);
-    t.yMin = Math.min(t.yMin, o.yMin);
-    t.xMax = Math.max(t.xMax, o.xMax);
-    t.yMax = Math.max(t.yMax, o.yMax);
+    _mergeBBox2d(target, other);
   }
   isBBox2dOut(a: BBox2dHandle, b: BBox2dHandle): boolean {
-    const ba = this.bb2d(a),
-      bb = this.bb2d(b);
-    return ba.xMax < bb.xMin || bb.xMax < ba.xMin || ba.yMax < bb.yMin || bb.yMax < ba.yMin;
+    return _isBBox2dOut(a, b);
   }
   isBBox2dOutPoint(bbox: BBox2dHandle, x: number, y: number): boolean {
-    const b = this.bb2d(bbox);
-    return x < b.xMin || x > b.xMax || y < b.yMin || y > b.yMax;
+    return _isBBox2dOutPoint(bbox, x, y);
   }
 
-  // --- 2D type extraction ---
   getCurve2dCircleData(
     curve: Curve2dHandle
   ): { cx: number; cy: number; radius: number; isDirect: boolean } | null {
-    const c = this.c2dBasis(curve);
-    if (c.__bk2d === 'circle') return { cx: c.cx, cy: c.cy, radius: c.radius, isDirect: c.sense };
-    return null;
+    return _getCurve2dCircleData(curve);
   }
   getCurve2dEllipseData(
     curve: Curve2dHandle
   ): { majorRadius: number; minorRadius: number; xAxisAngle: number; isDirect: boolean } | null {
-    const c = this.c2dBasis(curve);
-    if (c.__bk2d === 'ellipse')
-      return {
-        majorRadius: c.majorRadius,
-        minorRadius: c.minorRadius,
-        xAxisAngle: c.xDirAngle,
-        isDirect: c.sense,
-      };
-    return null;
+    return _getCurve2dEllipseData(curve);
   }
   getCurve2dBezierPoles(curve: Curve2dHandle): [number, number][] | null {
-    const c = this.c2dBasis(curve);
-    if (c.__bk2d === 'bezier') return [...c.poles];
-    return null;
+    return _getCurve2dBezierPoles(curve);
   }
   getCurve2dBezierDegree(curve: Curve2dHandle): number | null {
-    const c = this.c2dBasis(curve);
-    if (c.__bk2d === 'bezier') return c.poles.length - 1;
-    return null;
+    return _getCurve2dBezierDegree(curve);
   }
   getCurve2dBSplineData(curve: Curve2dHandle): {
     poles: [number, number][];
@@ -4695,281 +3518,45 @@ export class BrepkitAdapter implements KernelAdapter {
     degree: number;
     isPeriodic: boolean;
   } | null {
-    const c = this.c2dBasis(curve);
-    if (c.__bk2d === 'bspline')
-      return {
-        poles: [...c.poles],
-        knots: [...c.knots],
-        multiplicities: [...c.multiplicities],
-        degree: c.degree,
-        isPeriodic: c.isPeriodic,
-      };
-    return null;
+    return _getCurve2dBSplineData(curve);
   }
 
-  // --- 2D serialization ---
   serializeCurve2d(curve: Curve2dHandle): string {
-    return bk2d.serializeCurve2d(this.c2d(curve));
+    return _serializeCurve2d(curve);
   }
   deserializeCurve2d(data: string): Curve2dHandle {
-    return bk2d.deserializeCurve2d(data);
+    return _deserializeCurve2d(data);
   }
 
-  // --- 2D curve splitting ---
   splitCurve2d(curve: Curve2dHandle, params: number[]): Curve2dHandle[] {
-    const c = this.c2d(curve);
-    const bounds = bk2d.curveBounds(c);
-    const sortedParams = [bounds.first, ...params.sort((a, b) => a - b), bounds.last];
-    const result: Curve2dHandle[] = [];
-    for (let i = 0; i < sortedParams.length - 1; i++) {
-      result.push({
-        __bk2d: 'trimmed',
-        basis: c,
-        tStart: sortedParams[i],
-        tEnd: sortedParams[i + 1],
-      } as Curve2dObj);
-    }
-    return result;
+    return _splitCurve2d(curve, params);
   }
 
-  // --- 2D → 3D projection ---
   liftCurve2dToPlane(
     curve: Curve2dHandle,
     origin: [number, number, number],
     planeZ: [number, number, number],
     planeX: [number, number, number]
   ): KernelShape {
-    const c = this.c2d(curve);
-    // Build Y axis from Z cross X
-    const y: [number, number, number] = [
-      planeZ[1] * planeX[2] - planeZ[2] * planeX[1],
-      planeZ[2] * planeX[0] - planeZ[0] * planeX[2],
-      planeZ[0] * planeX[1] - planeZ[1] * planeX[0],
-    ];
-
-    // Helper to lift a 2D point onto the plane
-    const lift = (u: number, v: number): [number, number, number] => [
-      origin[0] + u * planeX[0] + v * y[0],
-      origin[1] + u * planeX[1] + v * y[1],
-      origin[2] + u * planeX[2] + v * y[2],
-    ];
-
-    // Lines: exact 3D line edge (no NURBS interpolation needed)
-    if (c.__bk2d === 'line') {
-      const p1 = lift(c.ox, c.oy);
-      const p2 = lift(c.ox + c.dx * c.len, c.oy + c.dy * c.len);
-      return this.makeLineEdge(p1, p2);
-    }
-
-    // Circles/arcs: use exact Circle3D edges via makeCircleArc3d when the
-    // basis is a circle. This produces EdgeCurve::Circle edges that extrude
-    // into CylindricalSurface faces (not NURBS), matching OCCT topology.
-    if (c.__bk2d === 'circle' || c.__bk2d === 'trimmed') {
-      // Unwrap trimmed to find the circle basis.
-      // bk2d curve objects have dynamic structure — suppress type-safety here.
-      /* eslint-disable @typescript-eslint/no-explicit-any -- bk2d curve internals */
-      let basis: any = c;
-      while (basis.__bk2d === 'trimmed') basis = basis.basis;
-
-      // Only use exact circle edges if the basis is actually a circle
-      if (basis.__bk2d === 'circle') {
-        const circ = basis;
-        const center3d = lift(circ.cx, circ.cy);
-        // Axis direction: CCW circle → planeZ, CW → -planeZ
-        const axis: [number, number, number] = circ.sense
-          ? planeZ
-          : [-planeZ[0], -planeZ[1], -planeZ[2]];
-
-        const bounds = bk2d.curveBounds(c);
-        let angularSpan: number;
-        if (c.__bk2d === 'trimmed') {
-          angularSpan = Math.abs((c as any).tEnd - (c as any).tStart);
-        } else {
-          angularSpan = 2 * Math.PI;
-        }
-        // Full/near-full circles → 4 arcs; large arcs → 2; small arcs → 1
-        const nSegments = angularSpan > Math.PI ? 4 : angularSpan > Math.PI / 2 ? 2 : 1;
-        const segmentSpan = (bounds.last - bounds.first) / nSegments;
-        const edgeIds: number[] = [];
-        for (let seg = 0; seg < nSegments; seg++) {
-          const [su, sv] = bk2d.evaluateCurve2d(c, bounds.first + seg * segmentSpan);
-          const [eu, ev] = bk2d.evaluateCurve2d(c, bounds.first + (seg + 1) * segmentSpan);
-          edgeIds.push(
-            this.bk.makeCircleArc3d(...lift(su, sv), ...lift(eu, ev), ...center3d, ...axis)
-          );
-        }
-        if (edgeIds.length === 1) return edgeHandle(edgeIds[0]!);
-        return wireHandle(this.bk.makeWire(edgeIds, false));
-      }
-
-      /* eslint-enable @typescript-eslint/no-explicit-any */
-
-      // Non-circle basis (e.g. ellipse): fall through to generic sampling below
-    }
-
-    // For Bezier/BSpline: lift control points exactly (preserves NURBS structure)
-    if (c.__bk2d === 'bezier' || c.__bk2d === 'bspline') {
-      const points3d = c.poles.map(([u, v]) => lift(u, v));
-      if (points3d.length === 2) return this.makeLineEdge(points3d[0]!, points3d[1]!);
-      const degree = Math.min(3, points3d.length - 1);
-      const coords = points3d.flatMap(([px, py, pz]) => [px, py, pz]);
-      const id = this.bk.interpolatePoints(coords, degree);
-      return edgeHandle(id);
-    }
-
-    // For unknown curve types: sample densely and interpolate
-    const bounds = bk2d.curveBounds(c);
-    const nSamples = 100;
-    const points: [number, number, number][] = [];
-    for (let i = 0; i <= nSamples; i++) {
-      const t = bounds.first + ((bounds.last - bounds.first) * i) / nSamples;
-      const [u, v] = bk2d.evaluateCurve2d(c, t);
-      points.push(lift(u, v));
-    }
-    return this.interpolatePoints(points);
+    return _liftCurve2dToPlane(this.bk, curve, origin, planeZ, planeX);
   }
   buildEdgeOnSurface(curve: Curve2dHandle, surface: KernelType): KernelShape {
-    // Sample the 2D curve, evaluate surface at those UV points, create 3D edge
-    if (!isBrepkitHandle(surface))
-      throw new Error('brepkit: buildEdgeOnSurface requires a face handle as surface');
-    const fid = unwrap(surface, 'face');
-    const c = this.c2d(curve);
-    const bounds = bk2d.curveBounds(c);
-
-    // For NURBS curves on planar surfaces, we can lift control points directly.
-    // For general surfaces, use dense sampling (100 points for accuracy).
-    const surfType = this.bk.getSurfaceType(fid);
-    const N = surfType === 'plane' ? 50 : 100;
-    const points: [number, number, number][] = [];
-    for (let i = 0; i <= N; i++) {
-      const t = bounds.first + ((bounds.last - bounds.first) * i) / N;
-      const [u, v] = bk2d.evaluateCurve2d(c, t);
-      const p = this.bk.evaluateSurface(fid, u, v);
-      points.push([p[0]!, p[1]!, p[2]!]);
-    }
-    return this.interpolatePoints(points);
+    return _buildEdgeOnSurface(this.bk, curve, surface);
   }
   extractSurfaceFromFace(face: KernelShape): KernelType {
-    return face; /* brepkit face IS its surface */
+    return _extractSurfaceFromFace(face);
   }
   extractCurve2dFromEdge(edge: KernelShape, face: KernelShape): Curve2dHandle {
-    const eid = unwrap(edge, 'edge');
-    const fid = unwrap(face, 'face');
-
-    const params = this.bk.getEdgeCurveParameters(eid);
-    const tMin = params[0] ?? 0;
-    const tMax = params[1] ?? 1;
-
-    // Sample the 3D edge curve and project onto the face's UV space.
-    // Uses uvFromPoint for proper projection on any surface type (not just planar).
-    // Adaptive sampling: start coarse, refine where UV curvature is high.
-    const BASE_N = 20;
-    const MAX_N = 80;
-    const REFINE_THRESHOLD = 0.05; // max UV chord deviation for refinement
-
-    // Initial coarse sample
-    const tValues: number[] = [];
-    for (let i = 0; i <= BASE_N; i++) {
-      tValues.push(tMin + ((tMax - tMin) * i) / BASE_N);
-    }
-
-    // Evaluate 3D points → UV
-    const evaluateUV = (t: number): [number, number] => {
-      const pt = this.bk.evaluateEdgeCurve(eid, t);
-      const uv = this.bk.projectPointOnSurface(fid, pt[0]!, pt[1]!, pt[2]!);
-      return [uv[0]!, uv[1]!];
-    };
-
-    const uvSamples: Array<{ t: number; uv: [number, number] }> = tValues.map((t) => ({
-      t,
-      uv: evaluateUV(t),
-    }));
-
-    // Adaptive refinement: insert midpoints where the UV midpoint deviates
-    // significantly from the linear interpolation of its neighbors.
-    let refinements = 0;
-    while (uvSamples.length < MAX_N) {
-      const insertions: Array<{ index: number; t: number; uv: [number, number] }> = [];
-      for (let i = 0; i < uvSamples.length - 1; i++) {
-        const a = uvSamples[i]!;
-        const b = uvSamples[i + 1]!;
-        const tMid = (a.t + b.t) / 2;
-        const uvMid = evaluateUV(tMid);
-        // Linear interpolation of UV
-        const interpU = (a.uv[0] + b.uv[0]) / 2;
-        const interpV = (a.uv[1] + b.uv[1]) / 2;
-        const deviation = Math.sqrt((uvMid[0] - interpU) ** 2 + (uvMid[1] - interpV) ** 2);
-        if (deviation > REFINE_THRESHOLD) {
-          insertions.push({ index: i + 1, t: tMid, uv: uvMid });
-        }
-      }
-      if (insertions.length === 0) break;
-      // Insert in reverse order to preserve indices; cap at MAX_N total samples
-      let budget = MAX_N - uvSamples.length;
-      for (let j = insertions.length - 1; j >= 0 && budget > 0; j--) {
-        const ins = insertions[j]!;
-        uvSamples.splice(ins.index, 0, { t: ins.t, uv: ins.uv });
-        budget--;
-      }
-      refinements++;
-      if (refinements > 3) break; // cap refinement passes
-    }
-
-    const uvPoints: [number, number][] = uvSamples.map((s) => s.uv);
-
-    if (uvPoints.length >= 2) {
-      return this.makeBSpline2d(uvPoints);
-    }
-
-    // Fallback: use edge vertices projected to UV
-    const verts = this.bk.getEdgeVertices(eid);
-    if (verts.length >= 6) {
-      const uv1 = this.bk.projectPointOnSurface(fid, verts[0]!, verts[1]!, verts[2]!);
-      const uv2 = this.bk.projectPointOnSurface(fid, verts[3]!, verts[4]!, verts[5]!);
-      return bk2d.makeLine2d(uv1[0]!, uv1[1]!, uv2[0]!, uv2[1]!);
-    }
-    throw new Error(`brepkit: extractCurve2dFromEdge: degenerate edge (${verts.length} coords)`);
+    return _extractCurve2dFromEdge(this.bk, edge, face);
   }
   buildCurves3d(_wire: KernelShape): void {
-    /* No-op: brepkit doesn't separate 2D/3D curve storage */
+    _buildCurves3d(_wire);
   }
   fixWireOnFace(wire: KernelShape, _face: KernelShape, _tolerance: number): KernelShape {
-    return wire;
+    return _fixWireOnFace(wire, _face, _tolerance);
   }
   fillSurface(wires: KernelShape[], _options?: Record<string, unknown>): KernelShape {
-    if (wires.length >= 1) {
-      // Try Coons patch for 4-sided boundaries
-      const wireEdges = this.iterShapes(wires[0], 'edge');
-      if (wireEdges.length === 4) {
-        // Collect boundary curves as polylines (sample each edge)
-        const allCoords: number[] = [];
-        const curveLengths: number[] = [];
-        for (const edge of wireEdges) {
-          const edgeId = unwrap(edge, 'edge');
-          const params = this.bk.getEdgeCurveParameters(edgeId);
-          const tMin = params[0]!,
-            tMax = params[1]!;
-          const N = 10;
-          const pts: number[] = [];
-          for (let i = 0; i <= N; i++) {
-            const t = tMin + ((tMax - tMin) * i) / N;
-            const p = this.bk.evaluateEdgeCurve(edgeId, t);
-            pts.push(p[0]!, p[1]!, p[2]!);
-          }
-          allCoords.push(...pts);
-          curveLengths.push(N + 1);
-        }
-        try {
-          const faceId: number = this.bk.fillCoonsPatch(allCoords, curveLengths);
-          return faceHandle(faceId);
-        } catch (e: unknown) {
-          console.warn('brepkit: Coons patch failed, falling back:', e);
-        }
-      }
-    }
-    const outerWire = wires[0];
-    if (!outerWire) throw new Error('fillSurface: no wires provided');
-    return this.makeNonPlanarFace(outerWire);
+    return _fillSurface(this.bk, wires, _options);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -5020,54 +3607,6 @@ export class BrepkitAdapter implements KernelAdapter {
       default:
         throw new Error(`brepkit: applyMatrix does not support '${h.type}' shapes`);
     }
-  }
-
-  /** Check if we need to transform from default placement (origin, +Z). */
-  private needsTransform(
-    center?: [number, number, number],
-    direction?: [number, number, number]
-  ): boolean {
-    if (center && (center[0] !== 0 || center[1] !== 0 || center[2] !== 0)) return true;
-    if (direction && (direction[0] !== 0 || direction[1] !== 0 || direction[2] !== 1)) return true;
-    return false;
-  }
-
-  /** Transform a shape from default placement (origin, +Z) to the given center and direction. */
-  private transformToPlacement(
-    shape: KernelShape,
-    center?: [number, number, number],
-    direction?: [number, number, number]
-  ): KernelShape {
-    let result = shape;
-
-    // First rotate from +Z to target direction
-    if (direction && (direction[0] !== 0 || direction[1] !== 0 || direction[2] !== 1)) {
-      const [dx, dy, dz] = direction;
-      const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      const nx = dx / len;
-      const ny = dy / len;
-      const nz = dz / len;
-
-      // Rotation from [0,0,1] to [nx,ny,nz]
-      // Using Rodrigues' rotation formula
-      const dot = nz; // [0,0,1] · [nx,ny,nz]
-      if (Math.abs(dot + 1) < 1e-10) {
-        // Anti-parallel: rotate 180° around X
-        result = this.rotate(result, 180, [1, 0, 0]);
-      } else if (Math.abs(dot - 1) > 1e-10) {
-        // Cross product [0,0,1] × [nx,ny,nz] = [-ny, nx, 0]
-        const axis: [number, number, number] = [-ny, nx, 0];
-        const angleDeg = Math.acos(Math.max(-1, Math.min(1, dot))) * (180 / Math.PI);
-        result = this.rotate(result, angleDeg, axis);
-      }
-    }
-
-    // Then translate to center
-    if (center && (center[0] !== 0 || center[1] !== 0 || center[2] !== 0)) {
-      result = this.translate(result, center[0], center[1], center[2]);
-    }
-
-    return result;
   }
 
   /** Tessellate a solid with per-face groups for brepjs mesh format. */
@@ -5231,105 +3770,6 @@ export class BrepkitAdapter implements KernelAdapter {
   }
 
   /**
-   * Create a NURBS circle/arc edge in 3D.
-   *
-   * Uses the rational quadratic B-spline circle representation:
-   * 9-point circle for full 2π, fewer arcs for partial.
-   */
-  private makeCircleNurbs(
-    center: [number, number, number],
-    normal: [number, number, number],
-    radius: number,
-    startAngle: number,
-    endAngle: number
-  ): KernelShape {
-    // Build a local frame: x_axis, y_axis perpendicular to normal
-    const len = Math.sqrt(normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2);
-    const nz = [normal[0] / len, normal[1] / len, normal[2] / len];
-
-    // Choose a reference direction not parallel to normal
-    const ref = Math.abs(nz[0]!) < 0.9 ? [1, 0, 0] : [0, 1, 0];
-    const xAxis = [
-      nz[1]! * ref[2]! - nz[2]! * ref[1]!,
-      nz[2]! * ref[0]! - nz[0]! * ref[2]!,
-      nz[0]! * ref[1]! - nz[1]! * ref[0]!,
-    ];
-    const xLen = Math.sqrt(xAxis[0]! ** 2 + xAxis[1]! ** 2 + xAxis[2]! ** 2);
-    xAxis[0]! /= xLen;
-    xAxis[1]! /= xLen;
-    xAxis[2]! /= xLen;
-    const yAxis = [
-      nz[1]! * xAxis[2]! - nz[2]! * xAxis[1]!,
-      nz[2]! * xAxis[0]! - nz[0]! * xAxis[2]!,
-      nz[0]! * xAxis[1]! - nz[1]! * xAxis[0]!,
-    ];
-
-    // Generate arc control points using rational quadratic segments
-    // Each 90° arc uses 3 control points with weight pattern [1, w, 1]
-    const nSegments = Math.ceil(Math.abs(endAngle - startAngle) / (Math.PI / 2));
-    const dAngle = (endAngle - startAngle) / nSegments;
-
-    const controlPoints: number[] = [];
-    const weights: number[] = [];
-
-    for (let i = 0; i <= nSegments; i++) {
-      const angle = startAngle + i * dAngle;
-      const cos = Math.cos(angle);
-      const sin = Math.sin(angle);
-      const px = center[0] + radius * (cos * xAxis[0]! + sin * yAxis[0]!);
-      const py = center[1] + radius * (cos * xAxis[1]! + sin * yAxis[1]!);
-      const pz = center[2] + radius * (cos * xAxis[2]! + sin * yAxis[2]!);
-
-      if (i > 0) {
-        // Mid-point (off-curve, weighted)
-        const midAngle = startAngle + (i - 0.5) * dAngle;
-        const midCos = Math.cos(midAngle);
-        const midSin = Math.sin(midAngle);
-        const midR = radius / Math.cos(dAngle / 2);
-        const mx = center[0] + midR * (midCos * xAxis[0]! + midSin * yAxis[0]!);
-        const my = center[1] + midR * (midCos * xAxis[1]! + midSin * yAxis[1]!);
-        const mz = center[2] + midR * (midCos * xAxis[2]! + midSin * yAxis[2]!);
-        controlPoints.push(mx, my, mz);
-        weights.push(Math.cos(dAngle / 2));
-      }
-
-      controlPoints.push(px, py, pz);
-      weights.push(1);
-    }
-
-    const degree = 2;
-    // Knot vector for rational quadratic with nSegments arcs
-    const knots: number[] = Array(degree + 1).fill(0);
-    for (let i = 1; i < nSegments; i++) {
-      knots.push(i, i);
-    }
-    knots.push(...Array(degree + 1).fill(nSegments));
-
-    // Normalize knots to [0, 1]
-    const kMax = knots[knots.length - 1]!;
-    for (let i = 0; i < knots.length; i++) {
-      knots[i] = knots[i]! / kMax;
-    }
-
-    const startPt = controlPoints.slice(0, 3);
-    const endPt = controlPoints.slice(-3);
-
-    const id = this.bk.makeNurbsEdge(
-      startPt[0]!,
-      startPt[1]!,
-      startPt[2]!,
-      endPt[0]!,
-      endPt[1]!,
-      endPt[2]!,
-      degree,
-      knots,
-      controlPoints,
-      weights
-    );
-    return edgeHandle(id);
-  }
-
-  /**
    * Extract NURBS curve data from an edge handle.
    * Returns null for line edges (caller can build a linear NURBS).
    * Returns {degree, knots, controlPoints, weights} for NURBS edges.
@@ -5360,167 +3800,6 @@ export class BrepkitAdapter implements KernelAdapter {
       controlPoints: [verts[0]!, verts[1]!, verts[2]!, verts[3]!, verts[4]!, verts[5]!],
       weights: [1, 1],
     };
-  }
-
-  /**
-   * Create a NURBS ellipse/ellipse-arc edge in 3D.
-   */
-  private makeEllipseNurbs(
-    center: [number, number, number],
-    normal: [number, number, number],
-    majorRadius: number,
-    minorRadius: number,
-    startAngle: number,
-    endAngle: number,
-    xDir?: [number, number, number]
-  ): KernelShape {
-    // Build local frame
-    const len = Math.sqrt(normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2);
-    const nz = [normal[0] / len, normal[1] / len, normal[2] / len];
-
-    let xAxis: number[];
-    if (xDir) {
-      const xl = Math.sqrt(xDir[0] ** 2 + xDir[1] ** 2 + xDir[2] ** 2);
-      xAxis = [xDir[0] / xl, xDir[1] / xl, xDir[2] / xl];
-    } else {
-      const ref = Math.abs(nz[0]!) < 0.9 ? [1, 0, 0] : [0, 1, 0];
-      xAxis = [
-        nz[1]! * ref[2]! - nz[2]! * ref[1]!,
-        nz[2]! * ref[0]! - nz[0]! * ref[2]!,
-        nz[0]! * ref[1]! - nz[1]! * ref[0]!,
-      ];
-      const xLen2 = Math.sqrt(xAxis[0]! ** 2 + xAxis[1]! ** 2 + xAxis[2]! ** 2);
-      xAxis[0]! /= xLen2;
-      xAxis[1]! /= xLen2;
-      xAxis[2]! /= xLen2;
-    }
-    const yAxis = [
-      nz[1]! * xAxis[2]! - nz[2]! * xAxis[1]!,
-      nz[2]! * xAxis[0]! - nz[0]! * xAxis[2]!,
-      nz[0]! * xAxis[1]! - nz[1]! * xAxis[0]!,
-    ];
-
-    // Exact rational degree-2 NURBS ellipse using weighted quadratic arcs.
-    // Same approach as makeCircleNurbs but with anisotropic radii.
-    const nSegments = Math.ceil(Math.abs(endAngle - startAngle) / (Math.PI / 2));
-    const dAngle = (endAngle - startAngle) / nSegments;
-
-    const controlPoints: number[] = [];
-    const weights: number[] = [];
-
-    for (let i = 0; i <= nSegments; i++) {
-      const angle = startAngle + i * dAngle;
-      const cos = Math.cos(angle);
-      const sin = Math.sin(angle);
-      const px = center[0] + majorRadius * cos * xAxis[0]! + minorRadius * sin * yAxis[0]!;
-      const py = center[1] + majorRadius * cos * xAxis[1]! + minorRadius * sin * yAxis[1]!;
-      const pz = center[2] + majorRadius * cos * xAxis[2]! + minorRadius * sin * yAxis[2]!;
-
-      if (i > 0) {
-        // Off-curve weighted midpoint (tangent intersection)
-        const midAngle = startAngle + (i - 0.5) * dAngle;
-        const midCos = Math.cos(midAngle);
-        const midSin = Math.sin(midAngle);
-        const scale = 1 / Math.cos(dAngle / 2);
-        const mx =
-          center[0] +
-          majorRadius * scale * midCos * xAxis[0]! +
-          minorRadius * scale * midSin * yAxis[0]!;
-        const my =
-          center[1] +
-          majorRadius * scale * midCos * xAxis[1]! +
-          minorRadius * scale * midSin * yAxis[1]!;
-        const mz =
-          center[2] +
-          majorRadius * scale * midCos * xAxis[2]! +
-          minorRadius * scale * midSin * yAxis[2]!;
-        controlPoints.push(mx, my, mz);
-        weights.push(Math.cos(dAngle / 2));
-      }
-
-      controlPoints.push(px, py, pz);
-      weights.push(1);
-    }
-
-    const degree = 2;
-    const knots: number[] = Array(degree + 1).fill(0);
-    for (let i = 1; i < nSegments; i++) {
-      knots.push(i, i);
-    }
-    knots.push(...Array(degree + 1).fill(nSegments));
-
-    // Normalize knots to [0, 1]
-    const kMax = knots[knots.length - 1]!;
-    for (let i = 0; i < knots.length; i++) {
-      knots[i] = knots[i]! / kMax;
-    }
-
-    const startPt = controlPoints.slice(0, 3);
-    const endPt = controlPoints.slice(-3);
-
-    const id = this.bk.makeNurbsEdge(
-      startPt[0]!,
-      startPt[1]!,
-      startPt[2]!,
-      endPt[0]!,
-      endPt[1]!,
-      endPt[2]!,
-      degree,
-      knots,
-      controlPoints,
-      weights
-    );
-    return edgeHandle(id);
-  }
-
-  /**
-   * Extract a plane definition (point + normal) from a face handle.
-   * Uses tessellation to find a concrete point on the face.
-   */
-  private extractPlaneFromFace(faceShape: KernelShape): {
-    point: [number, number, number];
-    normal: [number, number, number];
-  } {
-    // If a solid is passed (e.g. a thin box used as a cutting plane),
-    // extract its largest face.
-    let faceId: number;
-    const h = faceShape as BrepkitHandle;
-    if (h.type === 'solid' || h.type === 'compound') {
-      const faces = this.iterShapes(faceShape, 'face');
-      if (faces.length === 0) throw new Error('brepkit: extractPlaneFromFace: no faces found');
-      // Pick the face with the largest area
-      const firstFace = faces[0];
-      if (!firstFace) throw new Error('brepkit: extractPlaneFromFace: no faces found');
-      let bestId = unwrap(firstFace, 'face');
-      let bestArea = 0;
-      for (const f of faces) {
-        const id = unwrap(f, 'face');
-        try {
-          const a: number = this.bk.faceArea(id, DEFAULT_DEFLECTION);
-          if (a > bestArea) {
-            bestArea = a;
-            bestId = id;
-          }
-        } catch {
-          // skip faces that can't compute area
-        }
-      }
-      faceId = bestId;
-    } else {
-      faceId = unwrap(faceShape, 'face');
-    }
-    const n = this.bk.getFaceNormal(faceId);
-    const normal: [number, number, number] = [n[0]!, n[1]!, n[2]!];
-
-    // Get a point on the face via lightweight tessellation
-    const mesh = this.bk.tessellateFace(faceId, 1.0); // coarse is fine for a single point
-    const positions = mesh.positions;
-    if (positions.length >= 3) {
-      return { point: [positions[0]!, positions[1]!, positions[2]!], normal };
-    }
-
-    // Fallback: plane through origin with the given normal
-    return { point: [0, 0, 0], normal };
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -5717,14 +3996,7 @@ export class BrepkitAdapter implements KernelAdapter {
     op: string,
     tolerance: number
   ): KernelMeshResult {
-    const mesh = this.bk.meshBoolean(positionsA, indicesA, positionsB, indicesB, op, tolerance);
-    return {
-      vertices: new Float32Array(mesh.positions),
-      normals: new Float32Array(mesh.normals),
-      triangles: new Uint32Array(mesh.indices),
-      uvs: new Float32Array(0),
-      faceGroups: [{ start: 0, count: mesh.indices.length, faceHash: 0 }],
-    };
+    return _meshBoolean(this.bk, positionsA, indicesA, positionsB, indicesB, op, tolerance);
   }
 
   // ═══════════════════════════════════════════════════════════════════════

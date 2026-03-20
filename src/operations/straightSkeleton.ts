@@ -52,7 +52,8 @@ function len2(x: number, y: number): number {
 
 /** Safe polygon access with modular index. */
 function polyAt(poly: SkPoint2D[], i: number): SkPoint2D {
-  const p = poly[((i % poly.length) + poly.length) % poly.length];
+  const idx = ((i % poly.length) + poly.length) % poly.length;
+  const p = poly[idx];
   if (!p) throw new Error(`Invalid polygon index ${i} for length ${poly.length}`);
   return p;
 }
