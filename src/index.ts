@@ -211,6 +211,12 @@ export {
 
 export { importSVGPathD, importSVG, type SVGImportOptions } from './io/svgImportFns.js';
 
+export {
+  exportSTEPConfigured,
+  type StepExportOptions,
+  type StepExportPart,
+} from './io/stepConfigFns.js';
+
 // ── Layer 3: sketching ──
 
 export type { default as Sketcher } from './sketching/sketcher.js';
@@ -590,6 +596,14 @@ export { polyhedron, type PolyhedronOptions } from './topology/polyhedronFns.js'
 
 // (modifiers available via public API: fillet, chamfer, shell, offset, thicken)
 
+// ── Positioning (functional) ──
+
+export { positionOnCurve } from './topology/positionFns.js';
+
+// ── Variable-radius modifiers (functional) ──
+
+export { variableFillet, type VariableFilletRadius } from './topology/modifierFns.js';
+
 // ── Healing (functional) ──
 
 export {
@@ -597,6 +611,9 @@ export {
   healFace,
   healWire,
   autoHeal,
+  fixShape,
+  solidFromShell,
+  fixSelfIntersection,
   type HealingReport,
   type AutoHealOptions,
   type HealingStepDiagnostic,

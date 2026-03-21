@@ -74,6 +74,8 @@ export { fuseAll, cutAll, type BooleanOptions } from './topology/booleanFns.js';
 
 export { chamferDistAngle as chamferDistAngleShape } from './topology/chamferAngleFns.js';
 
+export { variableFillet, type VariableFilletRadius } from './topology/modifierFns.js';
+
 // ── Curves ──
 
 export {
@@ -151,6 +153,10 @@ export {
   type BufferGeometryGroup,
 } from './topology/threeHelpers.js';
 
+// ── Positioning ──
+
+export { positionOnCurve } from './topology/positionFns.js';
+
 // ── Healing ──
 
 export {
@@ -158,6 +164,9 @@ export {
   healFace,
   healWire,
   autoHeal,
+  fixShape,
+  solidFromShell,
+  fixSelfIntersection,
   type HealingReport,
   type AutoHealOptions,
   type HealingStepDiagnostic,
