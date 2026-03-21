@@ -138,6 +138,41 @@ export interface OperationResult {
   readonly evolution: ShapeEvolution;
 }
 
+/** Diagnostic information from a boolean operation. */
+export interface BooleanDiagnostics {
+  /** Whether the OCCT algorithm reported internal errors. */
+  readonly hasErrors: boolean;
+  /** Whether the OCCT algorithm reported warnings. */
+  readonly hasWarnings: boolean;
+  /**
+   * Human-readable messages. Currently always empty — OCCT's message
+   * reporting via Standard_OStream is not accessible in WASM builds.
+   * Reserved for future use.
+   */
+  readonly messages: readonly string[];
+}
+
+/** Extended operation result with diagnostics. */
+export interface DiagnosticOperationResult extends OperationResult {
+  readonly diagnostics: BooleanDiagnostics;
+}
+
+/** Issue detected during boolean pre-validation. */
+export interface BooleanIssue {
+  readonly operand: 'base' | 'tool';
+  readonly issue: 'null-shape' | 'not-valid';
+  readonly message: string;
+}
+
+/** Result of boolean pre-validation. */
+export interface CheckBooleanResult {
+  readonly valid: boolean;
+  readonly issues: readonly BooleanIssue[];
+}
+
+/** Boolean operation type for checkBoolean. */
+export type BooleanOpType = 'fuse' | 'cut' | 'intersect';
+
 /** Options for STEP assembly export with named/colored parts. */
 export interface StepAssemblyPart {
   shape: KernelShape;
