@@ -6,6 +6,7 @@
 import { getKernel } from '@/kernel/index.js';
 import type { AnyShape, Dimension, Face, OrientedFace, Shape3D } from '@/core/shapeTypes.js';
 import { type Result, ok, err } from '@/core/result.js';
+import { kernelCallRaw } from '@/core/kernelCall.js';
 import { validationError, BrepErrorCode } from '@/core/errors.js';
 import { uvBounds } from '@/topology/faceFns.js';
 import type { CurvatureResult } from '@/kernel/occt/measureOps.js';
@@ -51,18 +52,16 @@ export function measureVolumeProps(shape: Shape3D): Result<VolumeProps> {
 
   const kernel = getKernel();
   const m = kernel.volume(shape.wrapped);
-  let com: [number, number, number];
-  try {
-    com = kernel.centerOfMass(shape.wrapped);
-  } catch {
-    // centerOfMass can fail for hollow/complex solids — fall back to bbox center
-    const bb = kernel.boundingBox(shape.wrapped);
-    com = [(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2, (bb.min[2] + bb.max[2]) / 2];
-  }
+  const comResult = kernelCallRaw(
+    () => kernel.centerOfMass(shape.wrapped),
+    BrepErrorCode.CENTER_OF_MASS_FAILED,
+    'Failed to compute center of mass'
+  );
+  if (!comResult.ok) return comResult;
   const result: VolumeProps = {
     mass: m,
     volume: m,
-    centerOfMass: com,
+    centerOfMass: comResult.value,
   };
   setCachedMeasurement(shape.wrapped, 'volume', result);
   return ok(result);
@@ -82,11 +81,16 @@ export function measureSurfaceProps(shape: Face<Dimension> | Shape3D): Result<Su
 
   const kernel = getKernel();
   const m = kernel.area(shape.wrapped);
-  const com = kernel.centerOfMass(shape.wrapped);
+  const comResult = kernelCallRaw(
+    () => kernel.centerOfMass(shape.wrapped),
+    BrepErrorCode.CENTER_OF_MASS_FAILED,
+    'Failed to compute center of mass'
+  );
+  if (!comResult.ok) return comResult;
   const result: SurfaceProps = {
     mass: m,
     area: m,
-    centerOfMass: com,
+    centerOfMass: comResult.value,
   };
   setCachedMeasurement(shape.wrapped, 'surface', result);
   return ok(result);

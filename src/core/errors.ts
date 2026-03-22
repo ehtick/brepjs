@@ -118,6 +118,7 @@ export const BrepErrorCode = {
   INTERSECTION_FAILED: 'INTERSECTION_FAILED',
   SELF_INTERSECTION_FAILED: 'SELF_INTERSECTION_FAILED',
   STRAIGHT_SKELETON_FAILED: 'STRAIGHT_SKELETON_FAILED',
+  CENTER_OF_MASS_FAILED: 'CENTER_OF_MASS_FAILED',
 
   // Compound operation errors
   COMPOUND_NO_FACES: 'COMPOUND_NO_FACES',
@@ -185,6 +186,11 @@ export const BrepErrorCode = {
   CURVE2D_QUERY_FAILED: 'CURVE2D_QUERY_FAILED',
   CURVE2D_INTERSECTION_FAILED: 'CURVE2D_INTERSECTION_FAILED',
   CURVE2D_BRIDGE_FAILED: 'CURVE2D_BRIDGE_FAILED',
+
+  // Shape identity errors
+  CLONE_FAILED: 'CLONE_FAILED',
+  SIMPLIFY_FAILED: 'SIMPLIFY_FAILED',
+  TO_BREP_FAILED: 'TO_BREP_FAILED',
 
   // Unsupported capability errors (ADR-0006 Phase 4)
   UNSUPPORTED_CAPABILITY: 'UNSUPPORTED_CAPABILITY',
@@ -336,8 +342,8 @@ export function unsupportedError(
   return makeError('UNSUPPORTED', code, message, cause, metadata, suggestion);
 }
 
-// Re-export translateKernelError for backward compatibility
-export { translateKernelError } from './kernelErrorTranslation.js';
+// Re-export from kernelErrorTranslation for backward compatibility
+export { translateKernelError, getSuggestionForCode } from './kernelErrorTranslation.js';
 
 // ---------------------------------------------------------------------------
 // Array safety helper
