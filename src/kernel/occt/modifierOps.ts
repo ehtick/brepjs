@@ -8,6 +8,7 @@
  */
 
 import type { KernelInstance, KernelShape } from '@/kernel/types.js';
+import { perfTimer } from '../perfStats.js';
 
 export type FilletRadiusSpec =
   | number
@@ -24,20 +25,25 @@ export function fillet(
   edges: KernelShape[],
   radius: FilletRadiusSpec
 ): KernelShape {
-  const builder = new oc.BRepFilletAPI_MakeFillet(shape, oc.ChFi3d_FilletShape.ChFi3d_Rational);
-  for (const edge of edges) {
-    const r = typeof radius === 'function' ? radius(edge) : radius;
-    const downcast = oc.TopoDS.Edge_1(edge);
-    if (typeof r === 'number') {
-      if (r > 0) builder.Add_2(r, downcast);
-    } else {
-      const [r1, r2] = r;
-      if (r1 > 0 && r2 > 0) builder.Add_3(r1, r2, downcast);
+  const end = perfTimer('fillet');
+  try {
+    const builder = new oc.BRepFilletAPI_MakeFillet(shape, oc.ChFi3d_FilletShape.ChFi3d_Rational);
+    for (const edge of edges) {
+      const r = typeof radius === 'function' ? radius(edge) : radius;
+      const downcast = oc.TopoDS.Edge_1(edge);
+      if (typeof r === 'number') {
+        if (r > 0) builder.Add_2(r, downcast);
+      } else {
+        const [r1, r2] = r;
+        if (r1 > 0 && r2 > 0) builder.Add_3(r1, r2, downcast);
+      }
     }
+    const result = builder.Shape();
+    builder.delete();
+    return result;
+  } finally {
+    end();
   }
-  const result = builder.Shape();
-  builder.delete();
-  return result;
 }
 
 export type ChamferDistSpec =
@@ -123,29 +129,34 @@ export function shell(
   thickness: number,
   tolerance = 1e-3
 ): KernelShape {
-  const facesToRemove = new oc.TopTools_ListOfShape_1();
-  for (const face of faces) {
-    facesToRemove.Append_1(face);
+  const end = perfTimer('shell');
+  try {
+    const facesToRemove = new oc.TopTools_ListOfShape_1();
+    for (const face of faces) {
+      facesToRemove.Append_1(face);
+    }
+    const progress = new oc.Message_ProgressRange_1();
+    const builder = new oc.BRepOffsetAPI_MakeThickSolid();
+    builder.MakeThickSolidByJoin(
+      shape,
+      facesToRemove,
+      -thickness,
+      tolerance,
+      oc.BRepOffset_Mode.BRepOffset_Skin,
+      false,
+      false,
+      oc.GeomAbs_JoinType.GeomAbs_Arc,
+      false,
+      progress
+    );
+    const result = builder.Shape();
+    builder.delete();
+    facesToRemove.delete();
+    progress.delete();
+    return result;
+  } finally {
+    end();
   }
-  const progress = new oc.Message_ProgressRange_1();
-  const builder = new oc.BRepOffsetAPI_MakeThickSolid();
-  builder.MakeThickSolidByJoin(
-    shape,
-    facesToRemove,
-    -thickness,
-    tolerance,
-    oc.BRepOffset_Mode.BRepOffset_Skin,
-    false,
-    false,
-    oc.GeomAbs_JoinType.GeomAbs_Arc,
-    false,
-    progress
-  );
-  const result = builder.Shape();
-  builder.delete();
-  facesToRemove.delete();
-  progress.delete();
-  return result;
 }
 
 /**
@@ -271,4 +282,132 @@ export function offset(
   builder.delete();
   progress.delete();
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Batch operations — C++ detection + JS fallback
+// ---------------------------------------------------------------------------
+
+let hasCppShellBatch: boolean | undefined;
+let hasCppFilletBatch: boolean | undefined;
+
+export function resetShellBatchDetectionCache(): void {
+  hasCppShellBatch = undefined;
+}
+
+export function resetFilletBatchDetectionCache(): void {
+  hasCppFilletBatch = undefined;
+}
+
+function detectCppShellBatch(oc: KernelInstance): boolean {
+  hasCppShellBatch ??= typeof oc.ShellBatch === 'function';
+  return hasCppShellBatch;
+}
+
+function detectCppFilletBatch(oc: KernelInstance): boolean {
+  hasCppFilletBatch ??= typeof oc.FilletBatch === 'function';
+  return hasCppFilletBatch;
+}
+
+export interface ShellBatchEntry {
+  shape: KernelShape;
+  faces: KernelShape[];
+  thickness: number;
+  tolerance?: number | undefined;
+}
+
+export function shellBatch(oc: KernelInstance, entries: readonly ShellBatchEntry[]): KernelShape[] {
+  if (entries.length === 0) return [];
+
+  /* v8 ignore start -- C++ extractor not available in test WASM build */
+  if (detectCppShellBatch(oc)) {
+    const end = perfTimer('shell');
+    const batch = new oc.ShellBatch();
+    try {
+      for (const e of entries) {
+        const idx = batch.beginShell(e.shape, e.thickness, e.tolerance ?? 1e-3) as number;
+        // brepjs-patterns-disable: max-nesting-depth
+        for (const face of e.faces) {
+          batch.addFaceToRemove(idx, face);
+        }
+      }
+
+      const result = batch.execute();
+      try {
+        const count = result.getShapesCount() as number;
+        return Array.from({ length: count }, (_, i) => result.getShape(i));
+      } finally {
+        result.delete();
+      }
+    } finally {
+      batch.delete();
+      end();
+    }
+  }
+  /* v8 ignore stop */
+
+  // JS fallback — shell() has its own perfTimer
+  return entries.map((e) => shell(oc, e.shape, e.faces, e.thickness, e.tolerance ?? 1e-3));
+}
+
+export interface FilletBatchEdge {
+  edge: KernelShape;
+  radius: number;
+  r2?: number | undefined;
+}
+
+export interface FilletBatchEntry {
+  shape: KernelShape;
+  edges: readonly FilletBatchEdge[];
+}
+
+export function filletBatch(
+  oc: KernelInstance,
+  entries: readonly FilletBatchEntry[]
+): KernelShape[] {
+  if (entries.length === 0) return [];
+
+  /* v8 ignore start -- C++ extractor not available in test WASM build */
+  if (detectCppFilletBatch(oc)) {
+    const end = perfTimer('fillet');
+    const batch = new oc.FilletBatch();
+    try {
+      for (const e of entries) {
+        const idx = batch.beginFillet(e.shape) as number;
+        // brepjs-patterns-disable: max-nesting-depth
+        for (const ei of e.edges) {
+          // brepjs-patterns-disable: max-nesting-depth
+          if (ei.r2 !== undefined) {
+            batch.addEdgeVariable(idx, ei.edge, ei.radius, ei.r2);
+          } else {
+            batch.addEdge(idx, ei.edge, ei.radius);
+          }
+        }
+      }
+
+      const result = batch.execute();
+      try {
+        const count = result.getShapesCount() as number;
+        return Array.from({ length: count }, (_, i) => result.getShape(i));
+      } finally {
+        result.delete();
+      }
+    } finally {
+      batch.delete();
+      end();
+    }
+  }
+  /* v8 ignore stop */
+
+  // JS fallback — per-edge radius via callback, fillet() has its own perfTimer
+  return entries.map((e) => {
+    const edges = e.edges.map((ei) => ei.edge);
+    // Build a per-edge radius callback to preserve individual radii
+    const radiusFn = (edge: KernelShape): number | [number, number] => {
+      const match = e.edges.find((ei) => ei.edge === edge);
+      if (!match) return 0;
+      return match.r2 !== undefined ? [match.radius, match.r2] : match.radius;
+    };
+    return fillet(oc, e.shape, edges, radiusFn);
+  });
 }

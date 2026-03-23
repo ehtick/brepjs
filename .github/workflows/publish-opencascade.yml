@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   build-wasm:
@@ -19,22 +20,31 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Login to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
       - name: Build single (no exceptions)
         working-directory: packages/brepjs-opencascade/build-config
         run: |
-          docker run -i --rm -v "$(pwd)":/src donalffons/opencascade.js custom_build_single.yml
+          docker run -i --rm -v "$(pwd)":/src ghcr.io/andymai/opencascade.js:wasm-exceptions custom_build_single.yml
           mv brepjs_single* ../src/
 
       - name: Build with exceptions
+        continue-on-error: true
         working-directory: packages/brepjs-opencascade/build-config
         run: |
-          docker run -i --rm -v "$(pwd)":/src donalffons/opencascade.js custom_build_with_exceptions.yml
+          docker run -i --rm -v "$(pwd)":/src ghcr.io/andymai/opencascade.js:wasm-exceptions custom_build_with_exceptions.yml
           mv brepjs_with_exceptions* ../src/
 
       - name: Build threaded (multi-threading)
+        continue-on-error: true
         working-directory: packages/brepjs-opencascade/build-config
         run: |
-          docker run -i --rm -v "$(pwd)":/src donalffons/opencascade.js:multi-threaded custom_build_threaded.yml
+          docker run -i --rm -v "$(pwd)":/src ghcr.io/andymai/opencascade.js:wasm-exceptions custom_build_threaded.yml
           mv brepjs_threaded* ../src/
 
       - name: Upload WASM artifacts
@@ -67,6 +77,4 @@ jobs:
 
       - name: Publish to npm
         working-directory: packages/brepjs-opencascade
-        run: npm publish --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public

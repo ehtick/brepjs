@@ -38,6 +38,8 @@ export type {
 } from './kernel/index.js';
 export { supportsProjection, supportsConstraintSketch } from './kernel/index.js';
 export type { ProjectionCapability, ConstraintSketchCapability } from './kernel/index.js';
+export { getPerformanceStats, resetPerformanceStats } from './kernel/index.js';
+export type { PerformanceStats } from './kernel/perfStats.js';
 
 // ── Result type ──
 
@@ -671,6 +673,8 @@ export {
   twistExtrude,
   type SweepOptions,
   type ExtrusionProfile,
+  extrudeAll,
+  type ExtrudeAllEntry,
 } from './operations/extrudeFns.js';
 
 export {
@@ -969,6 +973,8 @@ export {
   type LoftOptions as CleanLoftOptions,
   type SweepOptions as CleanSweepOptions,
 } from './operations/api.js';
+
+export { loftAll, type LoftAllEntry } from './operations/loftFns.js';
 
 // ── Compound operations ──
 

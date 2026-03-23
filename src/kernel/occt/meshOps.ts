@@ -19,6 +19,7 @@ import type {
   KernelMeshResult,
   KernelEdgeMeshResult,
 } from '@/kernel/types.js';
+import { perfTimer } from '../perfStats.js';
 
 /** Slice a Float32Array from the WASM heap, or return empty if size is 0. */
 function sliceF32(heap: Float32Array, ptr: number, size: number): Float32Array {
@@ -38,52 +39,57 @@ export function mesh(
   shape: KernelShape,
   options: MeshOptions
 ): KernelMeshResult {
-  const raw = oc.MeshExtractor.extract(
-    shape,
-    options.tolerance,
-    options.angularTolerance,
-    !!options.skipNormals,
-    !!options.includeUVs
-  );
+  const end = perfTimer('mesh');
+  try {
+    const raw = oc.MeshExtractor.extract(
+      shape,
+      options.tolerance,
+      options.angularTolerance,
+      !!options.skipNormals,
+      !!options.includeUVs
+    );
 
-  const verticesSize = raw.getVerticesSize() as number;
-  const normalsSize = raw.getNormalsSize() as number;
-  const trianglesSize = raw.getTrianglesSize() as number;
-  const faceGroupsSize = raw.getFaceGroupsSize() as number;
-  const uvsSize = raw.getUvsSize() as number;
+    const verticesSize = raw.getVerticesSize() as number;
+    const normalsSize = raw.getNormalsSize() as number;
+    const trianglesSize = raw.getTrianglesSize() as number;
+    const faceGroupsSize = raw.getFaceGroupsSize() as number;
+    const uvsSize = raw.getUvsSize() as number;
 
-  // Copy from WASM heap into owned TypedArrays.
-  // Must .slice() before any other WASM call could grow/relocate the heap.
-  const vertices = sliceF32(oc.HEAPF32, raw.getVerticesPtr() as number, verticesSize);
-  const normals =
-    options.skipNormals || normalsSize === 0
-      ? new Float32Array(0)
-      : sliceF32(oc.HEAPF32, raw.getNormalsPtr() as number, normalsSize);
+    // Copy from WASM heap into owned TypedArrays.
+    // Must .slice() before any other WASM call could grow/relocate the heap.
+    const vertices = sliceF32(oc.HEAPF32, raw.getVerticesPtr() as number, verticesSize);
+    const normals =
+      options.skipNormals || normalsSize === 0
+        ? new Float32Array(0)
+        : sliceF32(oc.HEAPF32, raw.getNormalsPtr() as number, normalsSize);
 
-  const trianglesPtr = (raw.getTrianglesPtr() as number) / 4;
-  const triangles = oc.HEAPU32.slice(trianglesPtr, trianglesPtr + trianglesSize) as Uint32Array;
+    const trianglesPtr = (raw.getTrianglesPtr() as number) / 4;
+    const triangles = oc.HEAPU32.slice(trianglesPtr, trianglesPtr + trianglesSize) as Uint32Array;
 
-  const uvs =
-    uvsSize > 0 ? sliceF32(oc.HEAPF32, raw.getUvsPtr() as number, uvsSize) : new Float32Array(0);
+    const uvs =
+      uvsSize > 0 ? sliceF32(oc.HEAPF32, raw.getUvsPtr() as number, uvsSize) : new Float32Array(0);
 
-  // Parse face groups from packed [start, count, faceHash, ...] triples
-  const faceGroups: KernelMeshResult['faceGroups'] = [];
-  if (faceGroupsSize > 0) {
-    const fgPtr = (raw.getFaceGroupsPtr() as number) / 4;
-    const fgRaw = oc.HEAP32.slice(fgPtr, fgPtr + faceGroupsSize) as Int32Array;
-    for (let i = 0; i < fgRaw.length; i += 3) {
-      faceGroups.push({
-        start: fgRaw[i] as number,
-        count: fgRaw[i + 1] as number,
-        faceHash: fgRaw[i + 2] as number,
-      });
+    // Parse face groups from packed [start, count, faceHash, ...] triples
+    const faceGroups: KernelMeshResult['faceGroups'] = [];
+    if (faceGroupsSize > 0) {
+      const fgPtr = (raw.getFaceGroupsPtr() as number) / 4;
+      const fgRaw = oc.HEAP32.slice(fgPtr, fgPtr + faceGroupsSize) as Int32Array;
+      for (let i = 0; i < fgRaw.length; i += 3) {
+        faceGroups.push({
+          start: fgRaw[i] as number,
+          count: fgRaw[i + 1] as number,
+          faceHash: fgRaw[i + 2] as number,
+        });
+      }
     }
+
+    // Free C++ allocated memory (destructor frees internal buffers)
+    raw.delete();
+
+    return { vertices, normals, triangles, uvs, faceGroups };
+  } finally {
+    end();
   }
-
-  // Free C++ allocated memory (destructor frees internal buffers)
-  raw.delete();
-
-  return { vertices, normals, triangles, uvs, faceGroups };
 }
 
 /**
@@ -95,26 +101,31 @@ export function meshEdges(
   tolerance: number,
   angularTolerance: number
 ): KernelEdgeMeshResult {
-  const raw = oc.EdgeMeshExtractor.extract(shape, tolerance, angularTolerance);
+  const end = perfTimer('edgeMesh');
+  try {
+    const raw = oc.EdgeMeshExtractor.extract(shape, tolerance, angularTolerance);
 
-  const linesSize = raw.getLinesSize() as number;
-  const edgeGroupsSize = raw.getEdgeGroupsSize() as number;
+    const linesSize = raw.getLinesSize() as number;
+    const edgeGroupsSize = raw.getEdgeGroupsSize() as number;
 
-  const lines = sliceF32(oc.HEAPF32, raw.getLinesPtr() as number, linesSize);
+    const lines = sliceF32(oc.HEAPF32, raw.getLinesPtr() as number, linesSize);
 
-  const edgeGroups: KernelEdgeMeshResult['edgeGroups'] = [];
-  if (edgeGroupsSize > 0) {
-    const egPtr = (raw.getEdgeGroupsPtr() as number) / 4;
-    const egRaw = oc.HEAP32.slice(egPtr, egPtr + edgeGroupsSize) as Int32Array;
-    for (let i = 0; i < egRaw.length; i += 3) {
-      edgeGroups.push({
-        start: egRaw[i] as number,
-        count: egRaw[i + 1] as number,
-        edgeHash: egRaw[i + 2] as number,
-      });
+    const edgeGroups: KernelEdgeMeshResult['edgeGroups'] = [];
+    if (edgeGroupsSize > 0) {
+      const egPtr = (raw.getEdgeGroupsPtr() as number) / 4;
+      const egRaw = oc.HEAP32.slice(egPtr, egPtr + edgeGroupsSize) as Int32Array;
+      for (let i = 0; i < egRaw.length; i += 3) {
+        edgeGroups.push({
+          start: egRaw[i] as number,
+          count: egRaw[i + 1] as number,
+          edgeHash: egRaw[i + 2] as number,
+        });
+      }
     }
-  }
 
-  raw.delete();
-  return { lines, edgeGroups };
+    raw.delete();
+    return { lines, edgeGroups };
+  } finally {
+    end();
+  }
 }

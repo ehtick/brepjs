@@ -7,6 +7,7 @@
 
 import type { TransformEntry } from '@/kernel/interfaces/transformOps.js';
 import type { KernelInstance, KernelShape, KernelType } from '@/kernel/types.js';
+import { perfTimer } from '../perfStats.js';
 
 export type { TransformEntry };
 
@@ -30,54 +31,59 @@ function detectCppTransformBatch(oc: KernelInstance): boolean {
 export function transformBatch(oc: KernelInstance, entries: TransformEntry[]): KernelShape[] {
   if (entries.length === 0) return [];
 
-  /* v8 ignore start -- C++ extractor not available in test WASM build */
-  if (detectCppTransformBatch(oc)) {
-    const batch = new oc.TransformBatch();
-    try {
-      for (const e of entries) {
-        switch (e.type) {
-          case 'translate':
-            batch.addTranslate(e.shape, e.x, e.y, e.z);
-            break;
-          case 'rotate':
-            batch.addRotate(e.shape, (e.angle * Math.PI) / 180, ...e.axis, ...e.center);
-            break;
-          case 'scale':
-            batch.addScale(e.shape, ...e.center, e.factor);
-            break;
-          case 'mirror':
-            batch.addMirror(e.shape, ...e.origin, ...e.normal);
-            break;
-        }
-      }
-
-      const result = batch.execute();
+  const endPerf = perfTimer('transform');
+  try {
+    /* v8 ignore start -- C++ extractor not available in test WASM build */
+    if (detectCppTransformBatch(oc)) {
+      const batch = new oc.TransformBatch();
       try {
-        const count = result.getShapesCount() as number;
-        const shapes: KernelShape[] = Array.from({ length: count }, (_, i) => result.getShape(i));
-        return shapes;
-      } finally {
-        result.delete();
-      }
-    } finally {
-      batch.delete();
-    }
-  }
-  /* v8 ignore stop */
+        for (const e of entries) {
+          // brepjs-patterns-disable: max-nesting-depth
+          switch (e.type) {
+            case 'translate':
+              batch.addTranslate(e.shape, e.x, e.y, e.z);
+              break;
+            case 'rotate':
+              batch.addRotate(e.shape, (e.angle * Math.PI) / 180, ...e.axis, ...e.center);
+              break;
+            case 'scale':
+              batch.addScale(e.shape, ...e.center, e.factor);
+              break;
+            case 'mirror':
+              batch.addMirror(e.shape, ...e.origin, ...e.normal);
+              break;
+          }
+        }
 
-  // JS fallback — individual calls
-  return entries.map((e) => {
-    switch (e.type) {
-      case 'translate':
-        return translate(oc, e.shape, e.x, e.y, e.z);
-      case 'rotate':
-        return rotate(oc, e.shape, e.angle, [...e.axis], [...e.center]);
-      case 'scale':
-        return scale(oc, e.shape, [...e.center], e.factor);
-      case 'mirror':
-        return mirror(oc, e.shape, [...e.origin], [...e.normal]);
+        const result = batch.execute();
+        try {
+          const count = result.getShapesCount() as number;
+          return Array.from({ length: count }, (_, i) => result.getShape(i));
+        } finally {
+          result.delete();
+        }
+      } finally {
+        batch.delete();
+      }
     }
-  });
+    /* v8 ignore stop */
+
+    // JS fallback — individual calls
+    return entries.map((e) => {
+      switch (e.type) {
+        case 'translate':
+          return translate(oc, e.shape, e.x, e.y, e.z);
+        case 'rotate':
+          return rotate(oc, e.shape, e.angle, [...e.axis], [...e.center]);
+        case 'scale':
+          return scale(oc, e.shape, [...e.center], e.factor);
+        case 'mirror':
+          return mirror(oc, e.shape, [...e.origin], [...e.normal]);
+      }
+    });
+  } finally {
+    endPerf();
+  }
 }
 
 /**

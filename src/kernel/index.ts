@@ -5,6 +5,13 @@ import { DefaultAdapter } from './occt/defaultAdapter.js';
 import { BrepkitAdapter } from './brepkit/brepkitAdapter.js';
 import { resetMeasureDetectionCache } from './occt/measureOps.js';
 import { resetTransformDetectionCache } from './occt/transformOps.js';
+import { resetBooleanBatchDetectionCache } from './occt/booleanBatchOps.js';
+import { resetLoftBatchDetectionCache, resetExtrudeBatchDetectionCache } from './occt/sweepOps.js';
+import {
+  resetShellBatchDetectionCache,
+  resetFilletBatchDetectionCache,
+} from './occt/modifierOps.js';
+// resetPerformanceStats is exported but not called in initFromOC — users control their own stats lifecycle
 
 // ---------------------------------------------------------------------------
 // Kernel registry — supports multiple kernels for gradual migration
@@ -95,6 +102,11 @@ export function withKernel<T extends Exclude<unknown, Promise<unknown>>>(
 export function initFromOC(oc: KernelInstance): void {
   resetMeasureDetectionCache();
   resetTransformDetectionCache();
+  resetBooleanBatchDetectionCache();
+  resetLoftBatchDetectionCache();
+  resetExtrudeBatchDetectionCache();
+  resetShellBatchDetectionCache();
+  resetFilletBatchDetectionCache();
   const adapter = new DefaultAdapter(oc);
   registerKernel('occt', adapter);
   _defaultKernelId = 'occt';
@@ -221,3 +233,6 @@ export type { Kernel2DCapability, Curve2dHandle, BBox2dHandle } from './kernel2d
 
 export { BrepkitAdapter } from './brepkit/brepkitAdapter.js';
 export type { BrepkitHandle } from './brepkit/helpers.js';
+
+export { getPerformanceStats, resetPerformanceStats, perfTimer } from './perfStats.js';
+export type { PerfCategory, PerformanceStats } from './perfStats.js';
