@@ -386,16 +386,13 @@ function extractVertices(oc: KernelInstance, shapes: KernelShape[], tolerance: n
 
   for (const shape of shapes) {
     // Mesh the shape
-    const mesh = new oc.BRepMesh_IncrementalMesh_2(
+    const mesh = new oc.BRepMesh_IncrementalMeshWrapper(
       shape,
       meshDeflection,
       false,
       meshDeflection * 0.5,
       false
     );
-    const progress = new oc.Message_ProgressRange_1();
-    mesh.Perform(progress);
-    progress.delete();
     mesh.delete();
 
     // Iterate faces to get triangulation nodes
@@ -406,7 +403,7 @@ function extractVertices(oc: KernelInstance, shapes: KernelShape[], tolerance: n
     );
 
     while (explorer.More()) {
-      const face = oc.TopoDS.Face_1(explorer.Current());
+      const face = oc.TopoDS_Cast.Face(explorer.Current());
       const location = new oc.TopLoc_Location_1();
       const tri = oc.BRep_Tool.Triangulation(face, location, 0);
 
@@ -489,7 +486,7 @@ function reconstructBrep(
   );
 
   if (shellExplorer.More()) {
-    const shell = oc.TopoDS.Shell_1(shellExplorer.Current());
+    const shell = oc.TopoDS_Cast.Shell(shellExplorer.Current());
     shellExplorer.delete();
 
     const solidMaker = new oc.BRepBuilderAPI_MakeSolid_1();

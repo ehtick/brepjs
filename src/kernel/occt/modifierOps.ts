@@ -30,7 +30,7 @@ export function fillet(
     const builder = new oc.BRepFilletAPI_MakeFillet(shape, oc.ChFi3d_FilletShape.ChFi3d_Rational);
     for (const edge of edges) {
       const r = typeof radius === 'function' ? radius(edge) : radius;
-      const downcast = oc.TopoDS.Edge_1(edge);
+      const downcast = oc.TopoDS_Cast.Edge(edge);
       if (typeof r === 'number') {
         if (r > 0) builder.Add_2(r, downcast);
       } else {
@@ -74,14 +74,14 @@ export function chamfer(
       oc.TopAbs_ShapeEnum.TopAbs_SHAPE
     );
     while (faceExp.More()) {
-      const face = oc.TopoDS.Face_1(faceExp.Current());
+      const face = oc.TopoDS_Cast.Face(faceExp.Current());
       const edgeExp = new oc.TopExp_Explorer_2(
         face,
         oc.TopAbs_ShapeEnum.TopAbs_EDGE,
         oc.TopAbs_ShapeEnum.TopAbs_SHAPE
       );
       while (edgeExp.More()) {
-        const hash = edgeExp.Current().HashCode(2147483647);
+        const hash = oc.shapeHashCode(edgeExp.Current(), 2147483647);
         if (!edgeFaceMap.has(hash)) {
           edgeFaceMap.set(hash, face);
         }
@@ -95,12 +95,12 @@ export function chamfer(
   }
 
   function findContainingFace(edge: KernelShape): KernelShape | null {
-    return getEdgeFaceMap().get(edge.HashCode(2147483647)) ?? null;
+    return getEdgeFaceMap().get(oc.shapeHashCode(edge, 2147483647)) ?? null;
   }
 
   for (const edge of edges) {
     const d = typeof distance === 'function' ? distance(edge) : distance;
-    const downcast = oc.TopoDS.Edge_1(edge);
+    const downcast = oc.TopoDS_Cast.Edge(edge);
     if (typeof d === 'number') {
       if (d > 0) builder.Add_2(d, downcast);
     } else {
@@ -198,14 +198,14 @@ export function chamferDistAngle(
     oc.TopAbs_ShapeEnum.TopAbs_SHAPE
   );
   while (faceExplorer.More()) {
-    const face = oc.TopoDS.Face_1(faceExplorer.Current());
+    const face = oc.TopoDS_Cast.Face(faceExplorer.Current());
     const edgeExp = new oc.TopExp_Explorer_2(
       face,
       oc.TopAbs_ShapeEnum.TopAbs_EDGE,
       oc.TopAbs_ShapeEnum.TopAbs_SHAPE
     );
     while (edgeExp.More()) {
-      const hash = edgeExp.Current().HashCode(2147483647);
+      const hash = oc.shapeHashCode(edgeExp.Current(), 2147483647);
       if (!edgeFaceMap.has(hash)) {
         edgeFaceMap.set(hash, face);
       }
@@ -217,9 +217,9 @@ export function chamferDistAngle(
   faceExplorer.delete();
 
   for (const edge of edges) {
-    const containingFace = edgeFaceMap.get(edge.HashCode(2147483647)) ?? null;
+    const containingFace = edgeFaceMap.get(oc.shapeHashCode(edge, 2147483647)) ?? null;
     if (containingFace && distance > 0) {
-      builder.AddDA(distance, angleRad, oc.TopoDS.Edge_1(edge), containingFace);
+      builder.AddDA(distance, angleRad, oc.TopoDS_Cast.Edge(edge), containingFace);
     }
   }
 

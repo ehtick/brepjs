@@ -18,7 +18,7 @@ export function exportSTEP(oc: KernelInstance, shapes: KernelShape[]): string {
   const progress = new oc.Message_ProgressRange_1();
 
   for (const shape of shapes) {
-    writer.Transfer(shape, oc.STEPControl_StepModelType.STEPControl_AsIs, true, progress);
+    writer.Transfer_1(shape, oc.STEPControl_StepModelType.STEPControl_AsIs, true, progress);
   }
 
   const filename = uniqueIOFilename('_export', 'step');
@@ -109,15 +109,15 @@ export function importSTL(oc: KernelInstance, data: string | ArrayBuffer): Kerne
   oc.FS.writeFile('/' + filename, buffer);
 
   const reader = new oc.StlAPI_Reader();
-  const readShape = new oc.TopoDS_Shell();
+  const readShape = new oc.TopoDS_Shape();
 
-  if (reader.Read(readShape, filename)) {
+  if (reader.Read_1(readShape, '/' + filename)) {
     oc.FS.unlink('/' + filename);
     const upgrader = new oc.ShapeUpgrade_UnifySameDomain_2(readShape, true, true, false);
     upgrader.Build();
     const upgraded = upgrader.Shape();
     const solidBuilder = new oc.BRepBuilderAPI_MakeSolid_1();
-    solidBuilder.Add(oc.TopoDS.Shell_1(upgraded));
+    solidBuilder.Add(oc.TopoDS_Cast.Shell(upgraded));
     const solid = solidBuilder.Solid();
     readShape.delete();
     upgrader.delete();

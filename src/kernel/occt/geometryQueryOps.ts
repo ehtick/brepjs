@@ -321,21 +321,21 @@ export function downcast(oc: KernelInstance, shape: KernelShape, type?: string):
   const st = type ?? shapeTypeStr(oc, shape);
   switch (st) {
     case 'vertex':
-      return oc.TopoDS.Vertex_1(shape);
+      return oc.TopoDS_Cast.Vertex(shape);
     case 'edge':
-      return oc.TopoDS.Edge_1(shape);
+      return oc.TopoDS_Cast.Edge(shape);
     case 'wire':
-      return oc.TopoDS.Wire_1(shape);
+      return oc.TopoDS_Cast.Wire(shape);
     case 'face':
-      return oc.TopoDS.Face_1(shape);
+      return oc.TopoDS_Cast.Face(shape);
     case 'shell':
-      return oc.TopoDS.Shell_1(shape);
+      return oc.TopoDS_Cast.Shell(shape);
     case 'solid':
-      return oc.TopoDS.Solid_1(shape);
+      return oc.TopoDS_Cast.Solid(shape);
     case 'compsolid':
-      return oc.TopoDS.CompSolid_1(shape);
+      return oc.TopoDS_Cast.CompSolid(shape);
     default:
-      return oc.TopoDS.Compound_1(shape);
+      return oc.TopoDS_Cast.Compound(shape);
   }
 }
 
@@ -354,8 +354,8 @@ function shapeTypeStr(oc: KernelInstance, shape: KernelShape): string {
 }
 
 /** Get the hash code of a shape. */
-export function hashCode(_oc: KernelInstance, shape: KernelShape, upperBound: number): number {
-  return shape.HashCode(upperBound);
+export function hashCode(oc: KernelInstance, shape: KernelShape, upperBound: number): number {
+  return oc.shapeHashCode(shape, upperBound);
 }
 
 /** Check if a shape is null. */
@@ -378,7 +378,7 @@ export function hasTriangulation(oc: KernelInstance, shape: KernelShape): boolea
   const loc = new oc.TopLoc_Location_1();
   let found = false;
   while (explorer.More()) {
-    const face = oc.TopoDS.Face_1(explorer.Current());
+    const face = oc.TopoDS_Cast.Face(explorer.Current());
     const tri = oc.BRep_Tool.Triangulation(face, loc, 0);
     if (!tri.IsNull()) {
       found = true;
@@ -401,7 +401,7 @@ export function meshShape(
   tolerance: number,
   angularTolerance: number
 ): void {
-  const mesher = new oc.BRepMesh_IncrementalMesh_2(
+  const mesher = new oc.BRepMesh_IncrementalMeshWrapper(
     shape,
     tolerance,
     false,

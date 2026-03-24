@@ -126,7 +126,7 @@ mainBuild:
   - symbol: TopExp_Explorer
   - symbol: NCollection_BaseList
   - symbol: Poly_Connect
-  - symbol: StdPrs_ToolTriangulatedShape
+
   - symbol: Poly_Triangle
   - symbol: Poly_Triangulation
   - symbol: Handle_Poly_Triangulation
@@ -283,13 +283,15 @@ mainBuild:
   - symbol: ExtrudeBatch
   - symbol: ShellBatch
   - symbol: FilletBatch
+  - symbol: TopoDS_Cast
+  - symbol: BRepMesh_IncrementalMeshWrapper
+  - symbol: GeomAdaptor_TransformedSurface
   emccFlags:
   - -flto
   - -fwasm-exceptions
   - -sEXPORT_ES6=1
-  - -sUSE_ES6_IMPORT_META=0
   - -sALLOW_MEMORY_GROWTH=1
-  - -sEXPORTED_RUNTIME_METHODS=["FS"]
+  - -sEXPORTED_RUNTIME_METHODS=["FS","HEAP32","HEAPU32","HEAPF32","HEAPF64","HEAPU8"]
   - -msimd128
   - -mrelaxed-simd
   - -sWASM_BIGINT
@@ -297,7 +299,85 @@ mainBuild:
   - -O3
   - -sINITIAL_MEMORY=134217728
   - -sMAXIMUM_MEMORY=4294967296
+  additionalBindCode: |
+    #include <TopTools_ShapeMapHasher.hxx>
+    #include <emscripten/bind.h>
+    int shapeHashCode(const TopoDS_Shape& shape, int upperBound) {
+      return static_cast<int>(TopTools_ShapeMapHasher{}(shape) % upperBound);
+    }
+    gp_Pnt bsplineSurfacePole(const Geom_BSplineSurface& surf, int uIndex, int vIndex) {
+      return surf.Pole(uIndex, vIndex);
+    }
+    EMSCRIPTEN_BINDINGS(brepjs_helpers) {
+      emscripten::function("shapeHashCode", &shapeHashCode);
+      emscripten::function("bsplineSurfacePole", &bsplineSurfacePole, emscripten::allow_raw_pointers());
+    }
 additionalCppCode: |
+  #include <TopTools_ShapeMapHasher.hxx>
+  #include <BRepLib_ToolTriangulatedShape.hxx>
+
+  // Handle typedefs (V8 removed Handle_*.hxx headers)
+  typedef opencascade::handle<StepData_StepModel> Handle_StepData_StepModel;
+  typedef opencascade::handle<Geom2d_Geometry> Handle_Geom2d_Geometry;
+  typedef opencascade::handle<Geom2d_Line> Handle_Geom2d_Line;
+  typedef opencascade::handle<Geom2d_Curve> Handle_Geom2d_Curve;
+  typedef opencascade::handle<Geom2d_BoundedCurve> Handle_Geom2d_BoundedCurve;
+  typedef opencascade::handle<Geom2d_TrimmedCurve> Handle_Geom2d_TrimmedCurve;
+  typedef opencascade::handle<Geom2d_Ellipse> Handle_Geom2d_Ellipse;
+  typedef opencascade::handle<Geom2d_Circle> Handle_Geom2d_Circle;
+  typedef opencascade::handle<Geom2d_BezierCurve> Handle_Geom2d_BezierCurve;
+  typedef opencascade::handle<Geom2d_BSplineCurve> Handle_Geom2d_BSplineCurve;
+  typedef opencascade::handle<Geom_SphericalSurface> Handle_Geom_SphericalSurface;
+  typedef opencascade::handle<Geom_ElementarySurface> Handle_Geom_ElementarySurface;
+  typedef opencascade::handle<Geom_Geometry> Handle_Geom_Geometry;
+  typedef opencascade::handle<Geom_TrimmedCurve> Handle_Geom_TrimmedCurve;
+  typedef opencascade::handle<Geom_Curve> Handle_Geom_Curve;
+  typedef opencascade::handle<Geom_Surface> Handle_Geom_Surface;
+  typedef opencascade::handle<Geom_BezierCurve> Handle_Geom_BezierCurve;
+  typedef opencascade::handle<Geom_BSplineCurve> Handle_Geom_BSplineCurve;
+  typedef opencascade::handle<Geom_BSplineSurface> Handle_Geom_BSplineSurface;
+  typedef opencascade::handle<Poly_Triangulation> Handle_Poly_Triangulation;
+  typedef opencascade::handle<Poly_PolygonOnTriangulation> Handle_Poly_PolygonOnTriangulation;
+  typedef opencascade::handle<Adaptor2d_Curve2d> Handle_Adaptor2d_Curve2d;
+  typedef opencascade::handle<Law_Function> Handle_Law_Function;
+  typedef opencascade::handle<HLRBRep_Algo> Handle_HLRBRep_Algo;
+  typedef opencascade::handle<TDocStd_Document> Handle_TDocStd_Document;
+  typedef opencascade::handle<XCAFDoc_ShapeTool> Handle_XCAFDoc_ShapeTool;
+  typedef opencascade::handle<XCAFDoc_ColorTool> Handle_XCAFDoc_ColorTool;
+  typedef opencascade::handle<TDataStd_Name> Handle_TDataStd_Name;
+  typedef opencascade::handle<XSControl_WorkSession> Handle_XSControl_WorkSession;
+
+  // TopoDS static casters (not directly bindable via Embind)
+  class TopoDS_Cast {
+  public:
+    static TopoDS_Vertex Vertex(const TopoDS_Shape& S) { return TopoDS::Vertex(S); }
+    static TopoDS_Edge Edge(const TopoDS_Shape& S) { return TopoDS::Edge(S); }
+    static TopoDS_Wire Wire(const TopoDS_Shape& S) { return TopoDS::Wire(S); }
+    static TopoDS_Face Face(const TopoDS_Shape& S) { return TopoDS::Face(S); }
+    static TopoDS_Shell Shell(const TopoDS_Shape& S) { return TopoDS::Shell(S); }
+    static TopoDS_Solid Solid(const TopoDS_Shape& S) { return TopoDS::Solid(S); }
+    static TopoDS_Compound Compound(const TopoDS_Shape& S) { return TopoDS::Compound(S); }
+    static TopoDS_CompSolid CompSolid(const TopoDS_Shape& S) { return TopoDS::CompSolid(S); }
+  };
+
+  // BRepMesh wrapper (V8 constructor signature changed)
+  class BRepMesh_IncrementalMeshWrapper {
+  public:
+    BRepMesh_IncrementalMeshWrapper(const TopoDS_Shape& theShape,
+                                     const double theLinDeflection,
+                                     const bool isRelative,
+                                     const double theAngDeflection,
+                                     const bool isInParallel) {
+      mesh_ = new BRepMesh_IncrementalMesh(theShape, theLinDeflection, isRelative, theAngDeflection, isInParallel);
+    }
+    ~BRepMesh_IncrementalMeshWrapper() { delete mesh_; }
+    bool IsDone() const { return mesh_->IsDone(); }
+    bool IsModified() const { return mesh_->IsModified(); }
+    int GetStatusFlags() const { return mesh_->GetStatusFlags(); }
+  private:
+    BRepMesh_IncrementalMesh* mesh_;
+  };
+
   class BRepToolsWrapper {
   public:
     static std::string Write(const TopoDS_Shape& shape) {
@@ -472,12 +552,19 @@ additionalCppCode: |
         }
 
         if (!skipNormals) {
-          TColgp_Array1OfDir normalsArray(1, nbNodes);
-          Poly_Connect pc(tri);
-          StdPrs_ToolTriangulatedShape::Normal(face, pc, normalsArray);
-
+          if (!tri->HasNormals()) {
+            BRepLib_ToolTriangulatedShape::ComputeNormals(face, tri);
+          }
           for (int i = 1; i <= nbNodes; i++) {
-            gp_Dir d = normalsArray.Value(i).Transformed(trsf);
+            gp_Dir d(0, 0, 1);
+            if (tri->HasNormals()) {
+              NCollection_Vec3<float> nv;
+              tri->Normal(i, nv);
+              if (nv.x() != 0.0f || nv.y() != 0.0f || nv.z() != 0.0f) {
+                d = gp_Dir(nv.x(), nv.y(), nv.z());
+              }
+            }
+            d = d.Transformed(trsf);
             int base = (vertexOffset + i - 1) * 3;
             result.normalsPtr_[base + 0] = static_cast<float>(d.X());
             result.normalsPtr_[base + 1] = static_cast<float>(d.Y());
@@ -520,7 +607,7 @@ additionalCppCode: |
           triOffset += 3;
         }
 
-        int faceHash = face.HashCode(2147483647);
+        int faceHash = static_cast<int>(TopTools_ShapeMapHasher{}(face) % 2147483647);
         result.faceGroupsPtr_[faceGroupIdx + 0] = faceTriStart;
         result.faceGroupsPtr_[faceGroupIdx + 1] = (triOffset - faceTriStart);
         result.faceGroupsPtr_[faceGroupIdx + 2] = faceHash;
@@ -761,7 +848,7 @@ additionalCppCode: |
 
           result.edgeGroupsPtr_[groupOffset++] = lineStart;
           result.edgeGroupsPtr_[groupOffset++] = pointCount;
-          result.edgeGroupsPtr_[groupOffset++] = edge.HashCode(2147483647);
+          result.edgeGroupsPtr_[groupOffset++] = static_cast<int>(TopTools_ShapeMapHasher{}(edge) % 2147483647);
         }
       }
 
@@ -793,7 +880,7 @@ additionalCppCode: |
 
         result.edgeGroupsPtr_[groupOffset++] = lineStart;
         result.edgeGroupsPtr_[groupOffset++] = pointCount;
-        result.edgeGroupsPtr_[groupOffset++] = info.edge.HashCode(2147483647);
+        result.edgeGroupsPtr_[groupOffset++] = static_cast<int>(TopTools_ShapeMapHasher{}(info.edge) % 2147483647);
       }
 
       return result;
@@ -854,7 +941,7 @@ additionalCppCode: |
       NCollection_DataMap<int, TopoDS_Shape> facesByHash;
       for (TopExp_Explorer ex(inputShape, TopAbs_FACE); ex.More(); ex.Next()) {
         const TopoDS_Face& face = TopoDS::Face(ex.Current());
-        int hash = face.HashCode(hashUpperBound);
+        int hash = static_cast<int>(TopTools_ShapeMapHasher{}(face) % hashUpperBound);
         if (!facesByHash.IsBound(hash)) {
           facesByHash.Bind(hash, face);
         }
@@ -879,7 +966,7 @@ additionalCppCode: |
           modifiedBuf.push_back(inputHash);
           modifiedBuf.push_back(modList.Size());
           for (TopTools_ListIteratorOfListOfShape lit(modList); lit.More(); lit.Next()) {
-            modifiedBuf.push_back(lit.Value().HashCode(hashUpperBound));
+            modifiedBuf.push_back(static_cast<int>(TopTools_ShapeMapHasher{}(lit.Value()) % hashUpperBound));
           }
         }
 
@@ -888,7 +975,7 @@ additionalCppCode: |
           generatedBuf.push_back(inputHash);
           generatedBuf.push_back(genList.Size());
           for (TopTools_ListIteratorOfListOfShape lit(genList); lit.More(); lit.Next()) {
-            generatedBuf.push_back(lit.Value().HashCode(hashUpperBound));
+            generatedBuf.push_back(static_cast<int>(TopTools_ShapeMapHasher{}(lit.Value()) % hashUpperBound));
           }
         }
       }
@@ -936,7 +1023,10 @@ additionalCppCode: |
     }
 
     int getShapesCount() const { return shapesCount_; }
-    TopoDS_Shape getShape(int index) const { return shapesPtr_[index]; }
+    TopoDS_Shape getShape(int index) const {
+      if (index < 0 || index >= shapesCount_ || !shapesPtr_) return TopoDS_Shape();
+      return shapesPtr_[index];
+    }
 
   private:
     TopoDS_Shape* shapesPtr_;

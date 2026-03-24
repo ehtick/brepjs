@@ -55,7 +55,7 @@ export function rotateWithHistory(
 ): OperationResult {
   const trsf = new oc.gp_Trsf_1();
   const pnt = new oc.gp_Pnt_3(center[0], center[1], center[2]);
-  const dir = new oc.gp_Dir_4(axis[0], axis[1], axis[2]);
+  const dir = new oc.gp_Dir_5(axis[0], axis[1], axis[2]);
   const ax1 = new oc.gp_Ax1_2(pnt, dir);
   trsf.SetRotation_1(ax1, angle);
   pnt.delete();
@@ -76,8 +76,8 @@ export function mirrorWithHistory(
 ): OperationResult {
   const trsf = new oc.gp_Trsf_1();
   const pnt = new oc.gp_Pnt_3(origin[0], origin[1], origin[2]);
-  const dir = new oc.gp_Dir_4(normal[0], normal[1], normal[2]);
-  const ax2 = new oc.gp_Ax2_3(pnt, dir);
+  const dir = new oc.gp_Dir_5(normal[0], normal[1], normal[2]);
+  const ax2 = new oc.gp_Ax2_4(pnt, dir);
   trsf.SetMirror_3(ax2);
   pnt.delete();
   dir.delete();
@@ -248,9 +248,9 @@ export function filletWithHistory(
   for (const edge of edges) {
     const r = typeof radius === 'function' ? radius(edge) : radius;
     if (Array.isArray(r)) {
-      builder.Add_3(r[0], r[1], oc.TopoDS.Edge_1(edge));
+      builder.Add_3(r[0], r[1], oc.TopoDS_Cast.Edge(edge));
     } else {
-      builder.Add_2(r, oc.TopoDS.Edge_1(edge));
+      builder.Add_2(r, oc.TopoDS_Cast.Edge(edge));
     }
   }
   const progress = new oc.Message_ProgressRange_1();
@@ -279,14 +279,14 @@ export function chamferWithHistory(
   );
   const edgeFaceMap = new Map<number, KernelShape>();
   while (faceExplorer.More()) {
-    const face = oc.TopoDS.Face_1(faceExplorer.Current());
+    const face = oc.TopoDS_Cast.Face(faceExplorer.Current());
     const edgeExplorer = new oc.TopExp_Explorer_2(
       face,
       oc.TopAbs_ShapeEnum.TopAbs_EDGE,
       oc.TopAbs_ShapeEnum.TopAbs_SHAPE
     );
     while (edgeExplorer.More()) {
-      edgeFaceMap.set(edgeExplorer.Current().HashCode(hashUpperBound), face);
+      edgeFaceMap.set(oc.shapeHashCode(edgeExplorer.Current(), hashUpperBound), face);
       edgeExplorer.Next();
     }
     edgeExplorer.delete();
@@ -296,12 +296,12 @@ export function chamferWithHistory(
 
   for (const edge of edges) {
     const d = typeof distance === 'function' ? distance(edge) : distance;
-    const adjacentFace = edgeFaceMap.get(edge.HashCode(hashUpperBound));
+    const adjacentFace = edgeFaceMap.get(oc.shapeHashCode(edge, hashUpperBound));
     if (Array.isArray(d) && adjacentFace) {
-      builder.Add_3(d[0], d[1], oc.TopoDS.Edge_1(edge), adjacentFace);
+      builder.Add_3(d[0], d[1], oc.TopoDS_Cast.Edge(edge), adjacentFace);
     } else {
       const dist = Array.isArray(d) ? d[0] : d;
-      builder.Add_2(dist, oc.TopoDS.Edge_1(edge));
+      builder.Add_2(dist, oc.TopoDS_Cast.Edge(edge));
     }
   }
 
@@ -413,7 +413,7 @@ export function draftWithHistory(
   const [px, py, pz] = pullDirection;
   const [ox, oy, oz] = neutralPlane;
 
-  const dir = new oc.gp_Dir_4(px, py, pz);
+  const dir = new oc.gp_Dir_5(px, py, pz);
   const origin = new oc.gp_Pnt_3(ox, oy, oz);
   const pln = new oc.gp_Pln_3(origin, dir);
   const builder = new oc.BRepOffsetAPI_DraftAngle_2(shape);
@@ -421,7 +421,7 @@ export function draftWithHistory(
     for (const face of faces) {
       const angle = typeof angleDeg === 'function' ? angleDeg(face) : angleDeg;
       const angleRad = (angle * Math.PI) / 180;
-      builder.Add(oc.TopoDS.Face_1(face), dir, angleRad, pln, true);
+      builder.Add(oc.TopoDS_Cast.Face(face), dir, angleRad, pln, true);
     }
     const progress = new oc.Message_ProgressRange_1();
     builder.Build(progress);
