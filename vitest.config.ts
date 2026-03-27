@@ -39,7 +39,12 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.d.ts', 'src/**/index.ts', 'src/kernel/brepkit/**'],
+      exclude: [
+        'src/**/*.d.ts',
+        'src/**/index.ts',
+        'src/kernel/brepkit/**',
+        'src/kernel/occtWasm/**',
+      ],
       reporter: ['text', 'text-summary', 'lcov'],
       reportsDirectory: './coverage',
       thresholds: {
@@ -64,6 +69,18 @@ export default defineConfig({
           name: 'brepkit',
           env: { TEST_KERNEL: 'brepkit' },
           exclude: [...alwaysExclude],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'occt-wasm',
+          env: { TEST_KERNEL: 'occt-wasm' },
+          exclude: [
+            ...alwaysExclude,
+            'tests/brepkitExtended.test.ts',
+            'tests/brepkitAdapter.test.ts',
+          ],
         },
       },
     ],
