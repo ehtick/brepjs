@@ -269,6 +269,31 @@ function resolveUniformRadius(
   return typeof val === 'number' ? val : val[0];
 }
 
+/** Rotate a shape from Z-axis to an arbitrary direction. */
+function rotateZToDirection(
+  k: OcctKernelWasm,
+  shapeId: number,
+  dir: [number, number, number]
+): number {
+  const [dx, dy, dz] = dir;
+  const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (len < 1e-10) return shapeId;
+  const nx = dx / len,
+    ny = dy / len,
+    nz = dz / len;
+  // Already Z-up
+  if (Math.abs(nz - 1) < 1e-10) return shapeId;
+  // Flip to -Z: rotate 180° around X
+  if (Math.abs(nz + 1) < 1e-10) return k.rotate(shapeId, 0, 0, 0, 1, 0, 0, Math.PI);
+  // General: cross(Z, dir) = rotation axis, angle = acos(nz)
+  const ax = -ny,
+    ay = nx;
+  const axLen = Math.sqrt(ax * ax + ay * ay);
+  if (axLen < 1e-10) return shapeId;
+  const angle = Math.acos(Math.max(-1, Math.min(1, nz)));
+  return k.rotate(shapeId, 0, 0, 0, ax / axLen, ay / axLen, 0, angle);
+}
+
 export class OcctWasmAdapter implements KernelAdapter {
   readonly oc: KernelInstance;
   readonly kernelId = 'occt-wasm';
@@ -381,15 +406,13 @@ export class OcctWasmAdapter implements KernelAdapter {
     direction?: [number, number, number]
   ): KernelShape {
     let id = this.k.makeCylinder(radius, height);
-    if (center || direction) {
-      // The C++ facade only takes (radius, height) at origin along Z.
-      // Transform if needed.
-      if (direction && (direction[0] !== 0 || direction[1] !== 0 || direction[2] !== 1)) {
-        // TODO: apply rotation to align Z-axis with direction
-      }
-      if (center && (center[0] !== 0 || center[1] !== 0 || center[2] !== 0)) {
-        id = this.k.translate(id, center[0], center[1], center[2]);
-      }
+    // Rotate from Z-axis to direction if needed
+    if (direction) {
+      id = rotateZToDirection(this.k, id, direction);
+    }
+    // Translate to center
+    if (center && (center[0] !== 0 || center[1] !== 0 || center[2] !== 0)) {
+      id = this.k.translate(id, center[0], center[1], center[2]);
     }
     return handle('solid', id);
   }
@@ -731,9 +754,7 @@ export class OcctWasmAdapter implements KernelAdapter {
   ): KernelShape {
     if (points.length < 4) throw new Error('hullFromPoints: need at least 4 points');
     const faces = computeConvexHullFaces(points);
-    const solid = this.buildSolidFromFaces(points, faces, tolerance);
-    // Fix orientation to ensure positive volume (hull winding may be inverted)
-    return wrapResult(this.k, this.k.fixFaceOrientations(unwrap(solid)));
+    return this.buildSolidFromFaces(points, faces, tolerance);
   }
 
   buildSolidFromFaces(
@@ -752,7 +773,9 @@ export class OcctWasmAdapter implements KernelAdapter {
     }
     const vec = makeVecU32(this.Module, faceIds);
     try {
-      const sewn = this.k.sewAndSolidify(vec, tolerance);
+      let sewn = this.k.sewAndSolidify(vec, tolerance);
+      // Fix face orientations for consistent normals (OBJ/hull winding may vary)
+      sewn = this.k.fixFaceOrientations(sewn);
       return wrapResult(this.k, sewn);
     } finally {
       vec.delete();
@@ -874,7 +897,9 @@ export class OcctWasmAdapter implements KernelAdapter {
   sewAndSolidify(faces: KernelShape[], tolerance: number): KernelShape {
     const vec = makeVecU32(this.Module, faces.map(unwrap));
     try {
-      return handle('solid', this.k.sewAndSolidify(vec, tolerance));
+      let sewn = this.k.sewAndSolidify(vec, tolerance);
+      sewn = this.k.fixFaceOrientations(sewn);
+      return handle('solid', sewn);
     } finally {
       vec.delete();
     }
@@ -1863,16 +1888,26 @@ export class OcctWasmAdapter implements KernelAdapter {
   }
 
   draftWithHistory(
-    _shape: KernelShape,
-    _faces: KernelShape[],
-    _pullDirection: [number, number, number],
+    shape: KernelShape,
+    faces: KernelShape[],
+    pullDirection: [number, number, number],
     _neutralPlane: [number, number, number],
-    _angleDeg: number | ((face: KernelShape) => number),
+    angleDeg: number | ((face: KernelShape) => number),
     _inputFaceHashes: number[],
     _hashUpperBound: number
   ): OperationResult {
-    // No C++ draftWithHistory in the facade
-    notImplemented('draftWithHistory');
+    // Apply draft to each face sequentially (no evolution tracking)
+    const [dx, dy, dz] = pullDirection;
+    let currentId = unwrap(shape);
+    for (const face of faces) {
+      const angle = typeof angleDeg === 'number' ? angleDeg : angleDeg(face);
+      const angleRad = (angle * Math.PI) / 180;
+      currentId = this.k.draft(currentId, unwrap(face), angleRad, dx, dy, dz);
+    }
+    return {
+      shape: wrapResult(this.k, currentId),
+      evolution: { modified: new Map(), generated: new Map(), deleted: new Set() },
+    };
   }
 
   applyComposedTransformWithHistory(
@@ -2125,7 +2160,18 @@ export class OcctWasmAdapter implements KernelAdapter {
     _options?: { unit?: string | undefined; modelUnit?: string | undefined }
   ): string {
     // brepjs-patterns-disable: no-double-cast
-    return this.k.writeXCAFToSTEP(unwrap(doc as unknown as KernelShape));
+    const id = unwrap(doc as unknown as KernelShape);
+    // Empty documents (0 shapes) — check by looking for any sub-shapes
+    const subs = this.k.getSubShapes(id, 'solid');
+    const hasSolids = subs.size() > 0;
+    subs.delete();
+    if (!hasSolids) {
+      const faces = this.k.getSubShapes(id, 'face');
+      const hasFaces = faces.size() > 0;
+      faces.delete();
+      if (!hasFaces) return '';
+    }
+    return this.k.writeXCAFToSTEP(id);
   }
 
   exportSTEPConfigured(
@@ -2959,7 +3005,7 @@ export class OcctWasmAdapter implements KernelAdapter {
       delete() {
         /* no-op */
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque transform
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque type
     } as any;
   }
 
@@ -2977,13 +3023,23 @@ export class OcctWasmAdapter implements KernelAdapter {
       axDirX: dirX,
       axDirY: dirY,
       ratio,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque type bridge
+      delete() {
+        /* no-op */
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque type
     } as any;
   }
 
   createTranslationGTrsf2d(dx: number, dy: number): KernelType {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque type bridge
-    return { type: 'translate2d', dx, dy } as any;
+    return {
+      type: 'translate2d',
+      dx,
+      dy,
+      delete() {
+        /* no-op */
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque type
+    } as any;
   }
 
   createMirrorGTrsf2d(
@@ -2995,24 +3051,64 @@ export class OcctWasmAdapter implements KernelAdapter {
     dirX?: number,
     dirY?: number
   ): KernelType {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque type bridge
-    return { type: 'mirror2d', cx, cy, mode, originX, originY, dirX, dirY } as any;
+    return {
+      type: 'mirror2d',
+      cx,
+      cy,
+      mode,
+      originX,
+      originY,
+      dirX,
+      dirY,
+      delete() {
+        /* no-op */
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque type
+    } as any;
   }
 
   createRotationGTrsf2d(angle: number, cx: number, cy: number): KernelType {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque type bridge
-    return { type: 'rotate2d', angle, cx, cy } as any;
+    return {
+      type: 'rotate2d',
+      angle,
+      cx,
+      cy,
+      delete() {
+        /* no-op */
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque type
+    } as any;
   }
 
   createScaleGTrsf2d(factor: number, cx: number, cy: number): KernelType {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque type bridge
-    return { type: 'scale2d', sx: factor, sy: factor, cx, cy } as any;
+    return {
+      type: 'scale2d',
+      sx: factor,
+      sy: factor,
+      cx,
+      cy,
+      delete() {
+        /* no-op */
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque type
+    } as any;
   }
-  setGTrsf2dTranslationPart(_gtrsf: KernelType, _dx: number, _dy: number): void {
-    notImplemented('setGTrsf2dTranslationPart');
+  setGTrsf2dTranslationPart(gtrsf: KernelType, dx: number, dy: number): void {
+    const t = gtrsf;
+    t['dx'] = (Number(t['dx']) || 0) + dx;
+    t['dy'] = (Number(t['dy']) || 0) + dy;
   }
-  multiplyGTrsf2d(_base: KernelType, _other: KernelType): void {
-    notImplemented('multiplyGTrsf2d');
+  multiplyGTrsf2d(base: KernelType, other: KernelType): void {
+    const b = base;
+
+    const o = other;
+    b['dx'] = (Number(b['dx']) || 0) + (Number(o['dx']) || 0);
+    b['dy'] = (Number(b['dy']) || 0) + (Number(o['dy']) || 0);
+    if (o['type'] === 'scale2d') {
+      b['type'] = 'scale2d';
+      b['sx'] = o['sx'];
+      b['sy'] = o['sy'];
+    }
   }
   transformCurve2dGeneral(curve: Curve2dHandle, gtrsf: KernelType): Curve2dHandle {
     const t = gtrsf; /* transform dispatch */
@@ -3024,6 +3120,16 @@ export class OcctWasmAdapter implements KernelAdapter {
       return this.scaleCurve2d(curve, t['sx'] ?? 1, t['cx'] ?? 0, t['cy'] ?? 0);
     if (t['type'] === 'mirror2d')
       return this.mirrorCurve2dAtPoint(curve, t['ox'] ?? 0, t['oy'] ?? 0);
+    if (t['type'] === 'affinity2d')
+      return this.scaleCurve2d(
+        curve,
+        Number(t['ratio']) || 1,
+        Number(t['axOriginX']) || 0,
+        Number(t['axOriginY']) || 0
+      );
+    // Identity or unknown — apply any accumulated translation
+    if (Number(t['dx']) || Number(t['dy']))
+      return this.translateCurve2d(curve, Number(t['dx']) || 0, Number(t['dy']) || 0);
     return curve;
   } // brepjs-patterns-disable: no-double-cast
   intersectCurves2d(
