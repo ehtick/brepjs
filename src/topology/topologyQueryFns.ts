@@ -4,7 +4,7 @@
  */
 
 import { getKernel } from '@/kernel/index.js';
-import type { KernelShape, ShapeType } from '@/kernel/types.js';
+import type { KernelShape, ShapeType, SurfaceType } from '@/kernel/types.js';
 import type {
   AnyShape,
   Dimension,
@@ -15,6 +15,7 @@ import type {
   ShapeKind,
 } from '@/core/shapeTypes.js';
 import { castShapeWithKnownType } from '@/core/shapeTypes.js';
+import { getOrQueryType } from '@/core/shapeTypeCache.js';
 import type { Vec3 } from '@/core/types.js';
 
 // ---------------------------------------------------------------------------
@@ -48,7 +49,8 @@ export interface TopoCacheEntry {
   vertices?: Vertex<Dimension>[];
   faceOrigins?: Map<number, number>;
   bounds?: Bounds3D;
-  shapeKind?: ShapeKind;
+  isValid?: boolean;
+  surfaceType?: SurfaceType;
   /** Edge hash → edge-face pairs for adjacency queries. Stores the edge alongside
    *  each face so facesOfEdge can verify via isSame without re-extracting face edges. */
   edgeToFaces?: Map<number, Array<{ edge: KernelShape; face: KernelShape }>>;
@@ -191,13 +193,27 @@ export function getBounds(shape: AnyShape<Dimension>): Bounds3D {
 // Cached shape kind
 // ---------------------------------------------------------------------------
 
-/** Get the topological kind of a shape. Cached per shape. */
+/** Get the topological kind of a shape. Cached per shape via shapeTypeCache. */
 export function getCachedShapeKind(shape: AnyShape<Dimension>): ShapeKind {
+  return getOrQueryType(getKernel(), shape.wrapped);
+}
+
+/** Get the kernel surface type of a face. Cached per face (shapes are immutable). */
+export function getCachedSurfaceType(face: Face<Dimension>): SurfaceType {
+  const cache = getOrCreateCache(face);
+  if (cache.surfaceType !== undefined) return cache.surfaceType;
+  const surfType = getKernel().surfaceType(face.wrapped);
+  cache.surfaceType = surfType;
+  return surfType;
+}
+
+/** Get whether a shape is valid. Cached per shape (shapes are immutable). */
+export function getCachedIsValid(shape: AnyShape<Dimension>): boolean {
   const cache = getOrCreateCache(shape);
-  if (cache.shapeKind !== undefined) return cache.shapeKind;
-  const kind = getKernel().shapeType(shape.wrapped);
-  cache.shapeKind = kind;
-  return kind;
+  if (cache.isValid !== undefined) return cache.isValid;
+  const valid = getKernel().isValid(shape.wrapped);
+  cache.isValid = valid;
+  return valid;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +239,7 @@ export function describe(shape: AnyShape<Dimension>): ShapeDescription {
     edgeCount: getEdges(shape).length,
     wireCount: getWires(shape).length,
     vertexCount: getVertices(shape).length,
-    valid: getKernel().isValid(shape.wrapped),
+    valid: getCachedIsValid(shape),
     bounds: getBounds(shape),
   };
 }
