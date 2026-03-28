@@ -143,11 +143,13 @@ export function prewarm(): void {
  * Auto-detect and initialise the best available kernel.
  *
  * Tries `brepjs-opencascade` (OCCT) first, then falls back to `brepkit-wasm`.
+ * For `occt-wasm`, use {@link registerKernel} directly (see tests/helpers/kernelInit.ts).
+ *
  * Idempotent — calling it again after a kernel is registered is a no-op that
  * returns the current kernel ID immediately.
  *
  * @returns The kernel ID that was initialised (`'occt'` or `'brepkit'`).
- * @throws If neither `brepjs-opencascade` nor `brepkit-wasm` can be imported.
+ * @throws If no kernel package can be imported.
  *
  * @example
  * ```ts
@@ -182,10 +184,16 @@ export async function init(): Promise<string> {
     // brepkit not available either
   }
 
+  // occt-wasm is supported but requires explicit registration via
+  // registerKernel() because its WASM loading uses Node.js APIs
+  // (import.meta.resolve, node:path) that cannot be auto-detected
+  // in all environments. See tests/helpers/kernelInit.ts for the pattern.
+
   throw new Error(
     'brepjs: no kernel package found. Install one of:\n' +
       '  npm install brepjs-opencascade   (recommended)\n' +
-      '  npm install brepkit-wasm'
+      '  npm install brepkit-wasm\n' +
+      '  npm install occt-wasm            (requires manual registerKernel)'
   );
 }
 
@@ -233,6 +241,12 @@ export type { Kernel2DCapability, Curve2dHandle, BBox2dHandle } from './kernel2d
 
 export { BrepkitAdapter } from './brepkit/brepkitAdapter.js';
 export type { BrepkitHandle } from './brepkit/helpers.js';
+
+// OcctWasmAdapter is not re-exported here to avoid pulling ~16KB into the
+// main bundle. Users who need it can import directly:
+//   import { OcctWasmAdapter } from 'brepjs/kernel/occtWasm/occtWasmAdapter'
+// The init() fallback uses a dynamic import() to keep it tree-shaken.
+export type { OcctWasmHandle } from './occtWasm/occtWasmTypes.js';
 
 export { getPerformanceStats, resetPerformanceStats, perfTimer } from './perfStats.js';
 export type { PerfCategory, PerformanceStats } from './perfStats.js';
