@@ -112,6 +112,19 @@ function joinMiter(
     return;
   }
 
+  const midpoint: Point2D = [
+    (previousLastPoint[0] + firstPoint[0]) / 2,
+    (previousLastPoint[1] + firstPoint[1]) / 2,
+  ];
+  const miterDist = squareDistance2d(midpoint, offsetIntersectionPoint);
+  const endpointDist = squareDistance2d(previousLastPoint, firstPoint);
+  if (endpointDist < 1e-18 || miterDist > 16 * endpointDist) {
+    const bevelJoiner = make2dSegmentCurve(previousLastPoint, firstPoint);
+    appendCurve(previousCurve);
+    appendCurve(bevelJoiner);
+    return;
+  }
+
   const miterJoiner1 = make2dSegmentCurve(previousLastPoint, offsetIntersectionPoint);
   const miterJoiner2 = make2dSegmentCurve(offsetIntersectionPoint, firstPoint);
 
@@ -193,7 +206,6 @@ function findSelfIntersections(offsettedArray: Curve2D[]): Map<number, Point2D[]
   spatialIndex.finish();
 
   // Use spatial index to find candidate pairs, avoiding O(n²) comparisons
-  const testedPairs = new Set<string>();
   offsettedArray.forEach((firstCurve, firstIndex) => {
     const [[xMin, yMin], [xMax, yMax]] = firstCurve.boundingBox.bounds;
     const candidates = spatialIndex.search(xMin, yMin, xMax, yMax);
@@ -201,11 +213,6 @@ function findSelfIntersections(offsettedArray: Curve2D[]): Map<number, Point2D[]
     for (const secondIndex of candidates) {
       // Only test pairs where secondIndex > firstIndex to avoid duplicates
       if (secondIndex <= firstIndex) continue;
-
-      // Avoid testing the same pair twice
-      const pairKey = `${firstIndex}-${secondIndex}`;
-      if (testedPairs.has(pairKey)) continue;
-      testedPairs.add(pairKey);
 
       const secondCurve = safeIndex(offsettedArray, secondIndex, 'offsetBlueprint');
 
@@ -466,7 +473,7 @@ export default function offset(
     return fuseAll(bp.blueprints.map((b) => offset(b, offsetDistance, offsetConfig)));
   } else if (bp instanceof CompoundBlueprint) {
     const innerShape = fuseAll(
-      bp.blueprints.slice(1).map((b) => offset(b, offsetDistance, offsetConfig))
+      bp.blueprints.slice(1).map((b) => offset(b, -offsetDistance, offsetConfig))
     );
     return cut2D(
       offset(safeIndex(bp.blueprints, 0, 'offset'), offsetDistance, offsetConfig),
