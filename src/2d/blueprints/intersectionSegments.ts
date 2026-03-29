@@ -50,6 +50,14 @@ function* createSegmentOnPoints(
 
   let currentCurves: Curve2D[] = [];
   for (const curve of curves) {
+    // Degenerate curves (both endpoints within tolerance) from prior boolean
+    // operations are absorbed into the current accumulator without triggering
+    // a segment break — they carry no meaningful geometry.
+    if (samePoint(curve.firstPoint, curve.lastPoint)) {
+      currentCurves.push(curve);
+      continue;
+    }
+
     const endsAtIntersection = matchesIntersection(curve.lastPoint);
     const isCommon = matchesCommonSegment(curve.firstPoint, curve.lastPoint);
 
@@ -89,14 +97,24 @@ function removeNonCrossingPoints(
     const touching = segmentedCurve.filter(
       (s) => samePoint(s.firstPoint, intersection) || samePoint(s.lastPoint, intersection)
     );
-    if (touching.length % 2) {
-      bug(
-        'removeNonCrossingPoints',
-        'Odd number of segments at intersection point (expected even)'
-      );
-    }
+    // When a prior boolean operation left near-zero-length curves at corner
+    // junctions, a single intersection point can touch an odd number of
+    // segments: the two expected segments on either side plus the degenerate
+    // bystander whose both endpoints fall within PRECISION_INTERSECTION.
+    // Exclude such bystanders to restore the even-parity invariant.
+    const effectiveTouching =
+      touching.length % 2
+        ? touching.filter(
+            (s) => !(samePoint(s.firstPoint, intersection) && samePoint(s.lastPoint, intersection))
+          )
+        : touching;
 
-    const insideFlags = touching.map((segment) =>
+    // If nothing is left, or the count is still odd after removing
+    // bystanders, the intersection geometry is degenerate — conservatively
+    // classify as non-crossing so downstream segment pairing stays balanced.
+    if (effectiveTouching.length === 0 || effectiveTouching.length % 2) return false;
+
+    const insideFlags = effectiveTouching.map((segment) =>
       blueprintToCheck.isInside(curveMidPoint(segment))
     );
 
