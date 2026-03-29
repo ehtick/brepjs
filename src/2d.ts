@@ -85,6 +85,9 @@ export {
   distanceBetweenCurves2d,
   liftCurve2dToPlane,
   extractCurve2dFromEdge,
+  trimCurve2d,
+  copyCurve2d,
+  splitCurve2d,
   type Ellipse2dOptions,
   type BSpline2dOptions,
 } from './2d/curve2dGeometryFns.js';
