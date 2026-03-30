@@ -218,9 +218,24 @@ export default class Sketch implements SketchInterface {
     const defaultDir: Vec3 = this.defaultDirection;
     const xDir = vecScale(vecCross(normal, defaultDir), -1);
 
-    const sketch = sketchOnPlane(createPlane([...startPoint], [...xDir], [...normal]), [
+    const result = sketchOnPlane(createPlane([...startPoint], [...xDir], [...normal]), [
       ...startPoint,
     ]);
+
+    // The callback may return a Sketches (plural) when the Drawing used a
+    // 2D boolean that split the profile into multiple pieces. Extract the
+    // first sketch's wire and dispose the rest to prevent WASM leaks.
+    // Duck-type check avoids circular import (sketches.ts imports Sketch).
+    let sketch: Sketch;
+    if ('sketches' in result && Array.isArray((result as { sketches: unknown[] }).sketches)) {
+      const pieces = (result as { sketches: Sketch[] }).sketches;
+      sketch = pieces[0] as Sketch;
+      for (let i = 1; i < pieces.length; i++) {
+        pieces[i]?.delete();
+      }
+    } else {
+      sketch = result as Sketch;
+    }
 
     const config: SweepOptions = {
       forceProfileSpineOthogonality: true,
