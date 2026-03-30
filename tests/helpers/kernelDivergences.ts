@@ -218,6 +218,11 @@ export const divergences: DivergenceMap = {
       kind: 'skip',
       reason: 'brepkit: FACE_BUILD_FAILED on circle wire (non-planar wire detection issue)',
     },
+    'gridfinity.rectLipSweep': {
+      kind: 'skip',
+      reason:
+        'brepkit: sweep pipe on rectangular spine produces wildly different geometry bounds (xMax ~105 vs expected ~24)',
+    },
 
     // -----------------------------------------------------------------------
     // faceFinder.test.ts (topology-differs, not a skip)
