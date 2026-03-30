@@ -29,7 +29,7 @@ describe('Regression benchmark — gridfinity bin', () => {
 
   it('gridfinity bin: box + shell + sweep lip + fuse + mesh', async () => {
     const result = await bench(
-      'gridfinity-bin',
+      'gridfinity-bin-v2',
       () => {
         using _scope = new DisposalScope();
         const width = 42;
@@ -68,7 +68,7 @@ describe('Regression benchmark — gridfinity bin', () => {
           { frenet: true }
         ));
 
-        // 4. Fuse the lip onto the shelled box
+        // 4. Fuse the lip onto the shelled box (lip sweeps inward after #753 fix)
         const combined = _scope.register(unwrap(fuse(shelled, lipped)));
 
         // 5. Mesh the result
