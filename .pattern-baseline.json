@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated": "2026-03-29T20:30:47.223Z",
+  "generated": "2026-03-30T04:49:42.533Z",
   "entries": [
     {
       "file": "src/core/dimensionTypes.ts",
@@ -150,7 +150,7 @@
     {
       "file": "src/kernel/geometry2d.ts",
       "rule": "max-function-lines",
-      "fingerprint": "src/kernel/geometry2d.ts|max-function-lines|636|"
+      "fingerprint": "src/kernel/geometry2d.ts|max-function-lines|634|"
     },
     {
       "file": "src/kernel/occt/advancedOps.ts",
@@ -200,12 +200,12 @@
     {
       "file": "src/topology/modifierFns.ts",
       "rule": "max-function-lines",
-      "fingerprint": "src/topology/modifierFns.ts|max-function-lines|198|"
+      "fingerprint": "src/topology/modifierFns.ts|max-function-lines|197|"
     },
     {
       "file": "src/topology/modifierFns.ts",
       "rule": "max-function-lines",
-      "fingerprint": "src/topology/modifierFns.ts|max-function-lines|498|"
+      "fingerprint": "src/topology/modifierFns.ts|max-function-lines|497|"
     },
     {
       "file": "src/topology/surfaceFns.ts",
