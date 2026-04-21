@@ -2123,8 +2123,44 @@ export class OcctWasmAdapter implements KernelAdapter {
     notImplemented('exportGLB');
   }
 
-  exportOBJ(_shape: KernelShape, _tolerance: number): ArrayBuffer {
-    notImplemented('exportOBJ');
+  exportOBJ(shape: KernelShape, tolerance: number): ArrayBuffer {
+    const result = this.mesh(shape, {
+      tolerance,
+      angularTolerance: 0.5,
+      skipNormals: false,
+    });
+    const v = result.vertices;
+    const n = result.normals;
+    const t = result.triangles;
+
+    const lines: string[] = ['# brepjs OBJ export'];
+    const vCount = v.length / 3;
+    for (let i = 0; i < vCount; i++) {
+      const o = i * 3;
+      lines.push(`v ${v[o] ?? 0} ${v[o + 1] ?? 0} ${v[o + 2] ?? 0}`);
+    }
+    const nCount = n.length / 3;
+    for (let i = 0; i < nCount; i++) {
+      const o = i * 3;
+      lines.push(`vn ${n[o] ?? 0} ${n[o + 1] ?? 0} ${n[o + 2] ?? 0}`);
+    }
+    const pushTri = (offset: number) => {
+      const a = (t[offset] ?? 0) + 1;
+      const b = (t[offset + 1] ?? 0) + 1;
+      const c = (t[offset + 2] ?? 0) + 1;
+      lines.push(`f ${a}//${a} ${b}//${b} ${c}//${c}`);
+    };
+    if (result.faceGroups.length > 0) {
+      for (const group of result.faceGroups) {
+        lines.push(`g face_${group.faceHash}`);
+        const count = group.count / 3;
+        for (let i = 0; i < count; i++) pushTri(group.start + i * 3);
+      }
+    } else {
+      const triCount = t.length / 3;
+      for (let i = 0; i < triCount; i++) pushTri(i * 3);
+    }
+    return new TextEncoder().encode(lines.join('\n') + '\n').buffer;
   }
 
   exportPLY(_shape: KernelShape, _tolerance: number): ArrayBuffer {
