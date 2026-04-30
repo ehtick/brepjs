@@ -350,25 +350,16 @@ function createWrapped3D<T extends Shape3D>(val: T): Wrapped3D<T> {
 
     // Booleans — legacy OOP wrappers use unsafe to bypass ValidSolid requirement
     fuse: (tool, opts) =>
-      wrap3D(
-        unwrapOrThrow(
-          fuse(val, resolve(tool), { ...opts, unsafe: true } as BooleanOptions & { unsafe: true })
-        ) as unknown as T
-      ),
-    cut: (tool, opts) =>
-      wrap3D(
-        unwrapOrThrow(
-          cut(val, resolve(tool), { ...opts, unsafe: true } as BooleanOptions & { unsafe: true })
-        ) as unknown as T
-      ),
+      wrap3D(unwrapOrThrow(fuse(val, resolve(tool), { ...opts, unsafe: true }))),
+    cut: (tool, opts) => wrap3D(unwrapOrThrow(cut(val, resolve(tool), { ...opts, unsafe: true }))),
     intersect: (tool, opts) =>
       wrap3D(
         unwrapOrThrow(
           intersect(val, resolve(tool), {
             ...opts,
             unsafe: true,
-          } as BooleanOptions & { unsafe: true })
-        ) as unknown as T
+          })
+        )
       ),
 
     // Batch booleans — legacy OOP wrappers use unsafe to bypass ValidSolid requirement
@@ -378,15 +369,11 @@ function createWrapped3D<T extends Shape3D>(val: T): Wrapped3D<T> {
           fuseAllFn([val, ...tools.map(resolve)], {
             ...opts,
             unsafe: true,
-          } as BooleanOptions & { unsafe: true })
+          })
         ) as unknown as T
       ),
     cutAll: (tools, opts) =>
-      wrap3D(
-        unwrapOrThrow(
-          cutAllFn(val, tools, { ...opts, unsafe: true } as BooleanOptions & { unsafe: true })
-        ) as unknown as T
-      ),
+      wrap3D(unwrapOrThrow(cutAllFn(val, tools, { ...opts, unsafe: true })) as unknown as T),
 
     // Boolean variants — wrappers are always 3D context, safe to narrow
     section: (plane, opts) => wrapAny(unwrapOrThrow(sectionFn(val, plane, opts)) as AnyShape),
@@ -433,11 +420,11 @@ function createWrapped3D<T extends Shape3D>(val: T): Wrapped3D<T> {
       wrap3D(unwrapOrThrow(draftFn(val as unknown as ValidSolid, faces, opts)) as unknown as T),
 
     // Compound operations
-    drill: (opts) => wrap3D(unwrapOrThrow(drillFn(val, opts)) as unknown as T),
-    pocket: (opts) => wrap3D(unwrapOrThrow(pocketFn(val, opts)) as unknown as T),
-    boss: (opts) => wrap3D(unwrapOrThrow(bossFn(val, opts)) as unknown as T),
-    mirrorJoin: (opts) => wrap3D(unwrapOrThrow(mirrorJoinFn(val, opts)) as unknown as T),
-    rectangularPattern: (opts) => wrap3D(unwrapOrThrow(rectPatternFn(val, opts)) as unknown as T),
+    drill: (opts) => wrap3D(unwrapOrThrow(drillFn(val, opts))),
+    pocket: (opts) => wrap3D(unwrapOrThrow(pocketFn(val, opts))),
+    boss: (opts) => wrap3D(unwrapOrThrow(bossFn(val, opts))),
+    mirrorJoin: (opts) => wrap3D(unwrapOrThrow(mirrorJoinFn(val, opts))),
+    rectangularPattern: (opts) => wrap3D(unwrapOrThrow(rectPatternFn(val, opts))),
 
     // Measurement
     volume: () => unwrapOrThrow(measureVolume(val)),
@@ -510,9 +497,9 @@ function createWrappedFace(val: Face): WrappedFace {
 // ---------------------------------------------------------------------------
 
 function wrapAny<T extends AnyShape>(val: T): Wrapped<T> {
-  if (isShape3D(val)) return createWrapped3D(val) as unknown as Wrapped<T>;
+  if (isShape3D(val)) return createWrapped3D(val);
   if (isFace(val)) return createWrappedFace(val) as unknown as Wrapped<T>;
-  if (isEdge(val) || isWire(val)) return createWrappedCurve(val) as unknown as Wrapped<T>;
+  if (isEdge(val) || isWire(val)) return createWrappedCurve(val);
   return createWrappedBase(val);
 }
 
