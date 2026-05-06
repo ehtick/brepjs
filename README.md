@@ -6,7 +6,7 @@ CAD modeling for JavaScript.
 [![CI](https://github.com/andymai/brepjs/actions/workflows/ci.yml/badge.svg)](https://github.com/andymai/brepjs/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 
-**[Getting Started](./docs/getting-started.md)** · **[Cheat Sheet](./docs/cheat-sheet.md)** · **[Docs](https://andymai.github.io/brepjs/)**
+**[Getting Started](./docs/getting-started.md)** · **[Cheat Sheet](./docs/cheat-sheet.md)** · **[Docs](https://docs.brepjs.dev/)**
 
 Shapes are exact mathematical boundaries - not triangle meshes - so booleans are precise, measurements are real, and you can export to STEP. TypeScript types prove the geometry is valid at compile time.
 
@@ -67,20 +67,21 @@ Imports flow downward only. Boundaries are enforced in CI.
 
 ## Documentation
 
-- [Getting Started](./docs/getting-started.md): Install, create shapes, export to STEP
-- [B-Rep Concepts](./docs/concepts.md): Vertices, edges, faces, solids - and why they matter
-- [Which API?](./docs/which-api.md): Fluent wrapper vs Sketcher vs functional
-- [Cheat Sheet](./docs/cheat-sheet.md): Single-page quick reference
-- [Cookbook](./docs/cookbook.md): 21 practical recipes for common CAD workflows
-- [Three.js Integration](./docs/threejs-integration.md): Render brepjs shapes in the browser
-- [Function Lookup](./docs/function-lookup.md): Alphabetical index of every export
-- [Error Reference](./docs/errors.md): Error codes and recovery
-- [API Reference](https://andymai.github.io/brepjs/): Searchable TypeDoc reference
-- [Memory Management](./docs/memory-management.md): WASM resource cleanup patterns
-- [Performance](./docs/performance.md): Optimization tips
-- [Custom Kernels](./docs/kernel-swap.md): Swap or write your own geometry kernel
-- [Architecture](./docs/architecture.md): Layer diagram and module overview
-- [Compatibility](./docs/compatibility.md): Tested environments
+The chapter-based guide is the recommended starting point:
+
+- **[Why brepjs](https://docs.brepjs.dev/introduction/why-brepjs)** — what makes it different, who it's for
+- **[Install & Initialize](https://docs.brepjs.dev/getting-started/install)** — three init styles, bundler notes
+- **[Your First Solid](https://docs.brepjs.dev/getting-started/first-solid)** — the canonical drill-fillet-export workflow
+- **[Cheat Sheet](https://docs.brepjs.dev/getting-started/cheat-sheet)** — single-page reference
+- **[Core Concepts](https://docs.brepjs.dev/concepts/brep-vs-mesh)** — B-Rep, topology, types, kernels, tolerance
+- **[Common Tasks](https://docs.brepjs.dev/tasks/booleans)** — booleans, fillets, sketching, lofts, sweeps, finders, measurement, IO
+- **[Three.js Integration](https://docs.brepjs.dev/integration/threejs)** — meshing and rendering
+- **[Migration](https://docs.brepjs.dev/migration/replicad)** — coming from Replicad, OpenSCAD, or Three.js
+- **[Extending brepjs](https://docs.brepjs.dev/extending/architecture)** — custom kernels, custom operations, architecture
+- **[Reference](https://docs.brepjs.dev/reference/glossary)** — glossary, function lookup, error codes, ADRs
+- **[API Reference (TypeDoc)](https://andymai.github.io/brepjs/)** — searchable type-level reference
+
+Legacy single-page docs in [./docs/](./docs/) remain available; the chapter site is the canonical location going forward.
 
 ## Projects Using brepjs
 
