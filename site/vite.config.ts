@@ -2,7 +2,17 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
-import { createReadStream, existsSync, mkdirSync, copyFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { createReadStream, existsSync, mkdirSync, copyFileSync, readFileSync } from 'fs';
+
+interface PackageJson {
+  version?: string;
+}
+// Resolve relative to this config file, not cwd, so the build works regardless
+// of where vite is invoked from (e.g. monorepo root vs `site/`).
+const brepjsPkgPath = fileURLToPath(new URL('../package.json', import.meta.url));
+const brepjsPkg = JSON.parse(readFileSync(brepjsPkgPath, 'utf8')) as PackageJson;
+const BREPJS_VERSION = brepjsPkg.version ?? '0.0.0-dev';
 
 const WASM_FILES = ['brepjs_single.js', 'brepjs_single.wasm'];
 
@@ -54,6 +64,11 @@ function opencascadeWasm(): Plugin {
 
 export default defineConfig({
   base: BASE,
+  define: {
+    // Surfaced in the playground status bar so users can include the running
+    // brepjs version in bug reports without needing devtools.
+    __BREPJS_VERSION__: JSON.stringify(BREPJS_VERSION),
+  },
   plugins: [react(), tailwindcss(), opencascadeWasm()],
   server: {
     headers: {
