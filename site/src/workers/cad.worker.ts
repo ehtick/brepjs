@@ -1,4 +1,10 @@
-import type { ToWorker, FromWorker, MeshTransfer } from './workerProtocol';
+import type {
+  ToWorker,
+  FromWorker,
+  MeshTransfer,
+  FaceGroup,
+  EdgeGroup,
+} from './workerProtocol';
 import { WASM_CACHE_NAME } from '../lib/wasmConfig';
 
 declare function postMessage(message: unknown, transfer?: Transferable[]): void;
@@ -35,12 +41,19 @@ const codeCache = new Map<string, CachedEval>();
 const MAX_CACHE_SIZE = 20;
 
 function cloneMeshTransfer(mesh: MeshTransfer): MeshTransfer {
-  return {
+  const cloned: MeshTransfer = {
     position: new Float32Array(mesh.position),
     normal: new Float32Array(mesh.normal),
     index: new Uint32Array(mesh.index),
     edges: new Float32Array(mesh.edges),
   };
+  // Inspection metadata is plain JSON — pass-through reference is fine; the
+  // arrays of plain objects are not transferable, just copied structurally.
+  if (mesh.faceGroups) cloned.faceGroups = mesh.faceGroups;
+  if (mesh.edgeGroups) cloned.edgeGroups = mesh.edgeGroups;
+  if (mesh.faceInfos) cloned.faceInfos = mesh.faceInfos;
+  if (mesh.edgeInfos) cloned.edgeInfos = mesh.edgeInfos;
+  return cloned;
 }
 
 async function loadWasmBuild() {
@@ -73,14 +86,9 @@ async function loadWasmBuild() {
   URL.revokeObjectURL(blobUrl);
   const opencascade = ocModule.default;
 
-  const oc = await opencascade({
-    locateFile: (f: string) => {
-      if (f.endsWith('.wasm')) return wasmFile;
-      return f;
-    },
+  return opencascade({
+    locateFile: (path: string) => (path.endsWith('.wasm') ? wasmFile : path),
   });
-
-  return oc;
 }
 
 // Wrapper module that re-exports the loaded brepjs runtime via self.__brepjs.
@@ -145,18 +153,21 @@ function extractUserLine(err: unknown, userBlobUrl: string): number | undefined 
   return undefined;
 }
 
+function transferablesFor(meshes: MeshTransfer[]): Transferable[] {
+  return meshes.flatMap((mesh) => [
+    mesh.position.buffer,
+    mesh.normal.buffer,
+    mesh.index.buffer,
+    mesh.edges.buffer,
+  ]);
+}
+
 async function handleEval(id: string, code: string) {
-  const t0 = performance.now();
+  const startTime = performance.now();
 
   const cached = codeCache.get(code);
   if (cached) {
     const meshes = cached.meshes.map(cloneMeshTransfer);
-    const transferables = meshes.flatMap((m) => [
-      m.position.buffer,
-      m.normal.buffer,
-      m.index.buffer,
-      m.edges.buffer,
-    ]);
     post(
       {
         type: 'eval-result',
@@ -165,7 +176,7 @@ async function handleEval(id: string, code: string) {
         console: [...cached.console],
         timeMs: cached.timeMs,
       },
-      transferables
+      transferablesFor(meshes)
     );
     return;
   }
@@ -193,36 +204,36 @@ async function handleEval(id: string, code: string) {
   try {
     // Playground evaluates user-authored ES modules in a sandboxed Web Worker
     // with no DOM, cookies, or storage access.
-    const mod = (await import(/* @vite-ignore */ userBlobUrl)) as { default?: unknown };
+    const userModule = (await import(/* @vite-ignore */ userBlobUrl)) as { default?: unknown };
 
     if (cancelledIds.has(id)) {
       post({ type: 'eval-cancelled', id });
       return;
     }
 
-    let result: unknown = mod.default;
-
-    if (result == null) {
+    const exported = userModule.default;
+    if (exported == null) {
       post({
         type: 'eval-result',
         id,
         meshes: [],
         console: consoleOutput,
-        timeMs: performance.now() - t0,
+        timeMs: performance.now() - startTime,
       });
       return;
     }
 
-    if (!Array.isArray(result)) {
-      result = [result];
-    }
+    const shapes: unknown[] = Array.isArray(exported) ? exported : [exported];
+    lastEvalResult = shapes;
 
-    lastEvalResult = result as unknown[];
+    // Inspection metadata is only attached to single-shape evals — the
+    // viewer's selection model is per-shape and the click → finder flow
+    // would be ambiguous across multiple bodies.
+    const collectInspection = shapes.length === 1;
 
     const meshes: MeshTransfer[] = [];
-    const transferables: Transferable[] = [];
 
-    for (const shape of result as unknown[]) {
+    for (const shape of shapes) {
       if (cancelledIds.has(id)) {
         post({ type: 'eval-cancelled', id });
         return;
@@ -234,23 +245,32 @@ async function handleEval(id: string, code: string) {
         const shapeMesh = brepjs.mesh(fnShape, { tolerance: 0.1, angularTolerance: 0.2 });
         const edgeMesh = brepjs.meshEdges(fnShape, { tolerance: 0.1, angularTolerance: 0.2 });
 
-        const bufData = brepjs.toBufferGeometryData(shapeMesh);
+        const grouped = brepjs.toGroupedBufferGeometryData(shapeMesh);
         const lineData = brepjs.toLineGeometryData(edgeMesh);
 
         const mesh: MeshTransfer = {
-          position: bufData.position,
-          normal: bufData.normal,
-          index: bufData.index,
+          position: grouped.position,
+          normal: grouped.normal,
+          index: grouped.index,
           edges: lineData.position,
         };
 
+        if (collectInspection) {
+          mesh.faceGroups = (grouped.groups as FaceGroup[]).map((g) => ({
+            start: g.start,
+            count: g.count,
+            faceId: g.faceId,
+          }));
+          mesh.edgeGroups = (edgeMesh.edgeGroups as EdgeGroup[]).map((g) => ({
+            start: g.start,
+            count: g.count,
+            edgeId: g.edgeId,
+          }));
+          mesh.faceInfos = collectFaceInfos(fnShape);
+          mesh.edgeInfos = collectEdgeInfos(fnShape);
+        }
+
         meshes.push(mesh);
-        transferables.push(
-          mesh.position.buffer,
-          mesh.normal.buffer,
-          mesh.index.buffer,
-          mesh.edges.buffer
-        );
       } catch (meshErr) {
         consoleOutput.push(
           `[error] ${meshErr instanceof Error ? meshErr.message : String(meshErr)}`
@@ -258,7 +278,7 @@ async function handleEval(id: string, code: string) {
       }
     }
 
-    const timeMs = performance.now() - t0;
+    const timeMs = performance.now() - startTime;
 
     if (cancelledIds.has(id)) {
       post({ type: 'eval-cancelled', id });
@@ -275,7 +295,10 @@ async function handleEval(id: string, code: string) {
       timeMs,
     });
 
-    post({ type: 'eval-result', id, meshes, console: consoleOutput, timeMs }, transferables);
+    post(
+      { type: 'eval-result', id, meshes, console: consoleOutput, timeMs },
+      transferablesFor(meshes)
+    );
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e);
     const line = extractUserLine(e, userBlobUrl);
@@ -286,6 +309,67 @@ async function handleEval(id: string, code: string) {
     console.warn = origWarn;
     cancelledIds.delete(id);
   }
+}
+
+// Per-element try/catch keeps one degenerate face / edge from wiping the
+// whole shape's metadata — `normalAt` can throw on quirky BSpline UV
+// parameterizations; `curveLength` can throw on offset / closed curves.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- brepjs Face handle
+function collectFaceInfos(shape: any) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- brepjs Face handle
+  let faces: any[];
+  try {
+    faces = brepjs.getFaces(shape);
+  } catch (err) {
+    console.warn('[brepjs-playground] getFaces threw; faces unselectable', err);
+    return [];
+  }
+  const infos = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- brepjs Face handle
+  for (const face of faces as any[]) {
+    try {
+      const surfaceTypeResult = brepjs.getSurfaceType(face);
+      const surfaceType = brepjs.isOk(surfaceTypeResult)
+        ? (surfaceTypeResult.value as string)
+        : 'OTHER_SURFACE';
+      const normal = brepjs.normalAt(face) as [number, number, number];
+      infos.push({
+        faceId: brepjs.getHashCode(face),
+        surfaceType,
+        area: brepjs.measureArea(face),
+        normal,
+      });
+    } catch (err) {
+      console.warn('[brepjs-playground] face metadata threw; skipping face', err);
+    }
+  }
+  return infos;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- brepjs Edge handle
+function collectEdgeInfos(shape: any) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- brepjs Edge handle
+  let edges: any[];
+  try {
+    edges = brepjs.getEdges(shape);
+  } catch (err) {
+    console.warn('[brepjs-playground] getEdges threw; edges unselectable', err);
+    return [];
+  }
+  const infos = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- brepjs Edge handle
+  for (const edge of edges as any[]) {
+    try {
+      infos.push({
+        edgeId: brepjs.getHashCode(edge),
+        curveType: brepjs.getCurveType(edge) as string,
+        length: brepjs.curveLength(edge),
+      });
+    } catch (err) {
+      console.warn('[brepjs-playground] edge metadata threw; skipping edge', err);
+    }
+  }
+  return infos;
 }
 
 function unwrapResultShape(shape: unknown): unknown {
@@ -353,6 +437,10 @@ addEventListener('message', (e: MessageEvent<ToWorker>) => {
       break;
     case 'cancel':
       cancelledIds.add(msg.id);
+      // GC stale ids whose eval already completed (the eval's `finally`
+      // would have deleted its own id; this catches cancels that arrive
+      // after the result was already posted).
+      setTimeout(() => cancelledIds.delete(msg.id), 5000);
       break;
     case 'export-stl':
       handleExportSTL(msg.id);

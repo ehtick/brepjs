@@ -1,5 +1,12 @@
 import { useEngineStore } from '../../stores/engineStore';
-import { usePlaygroundStore } from '../../stores/playgroundStore';
+import { usePlaygroundStore, type Selection } from '../../stores/playgroundStore';
+import {
+  formatArea,
+  formatCurveType,
+  formatLength,
+  formatNormalDirection,
+  formatSurfaceType,
+} from '../../lib/selectionLabels';
 
 export default function StatusBar() {
   const engineStatus = useEngineStore((s) => s.status);
@@ -7,6 +14,7 @@ export default function StatusBar() {
   const error = usePlaygroundStore((s) => s.error);
   const timeMs = usePlaygroundStore((s) => s.timeMs);
   const isRunning = usePlaygroundStore((s) => s.isRunning);
+  const selection = usePlaygroundStore((s) => s.selection);
 
   let statusText: string;
   let statusColor: string;
@@ -42,6 +50,34 @@ export default function StatusBar() {
           <span className="text-gray-500">{timeMs.toFixed(0)}ms</span>
         )}
       </div>
+      {selection && (
+        <div className="flex min-w-0 items-center gap-2 truncate whitespace-nowrap text-gray-300">
+          <SelectionLine selection={selection} />
+        </div>
+      )}
     </div>
+  );
+}
+
+function SelectionLine({ selection }: { selection: Selection }) {
+  if (selection.kind === 'face') {
+    const face = selection.info;
+    return (
+      <>
+        <span className="font-medium">{formatSurfaceType(face.surfaceType)}</span>
+        <span className="text-gray-500">·</span>
+        <span>area {formatArea(face.area)}</span>
+        <span className="text-gray-500">·</span>
+        <span>facing {formatNormalDirection(face.normal)}</span>
+      </>
+    );
+  }
+  const edge = selection.info;
+  return (
+    <>
+      <span className="font-medium">{formatCurveType(edge.curveType)}</span>
+      <span className="text-gray-500">·</span>
+      <span>length {formatLength(edge.length)}</span>
+    </>
   );
 }
