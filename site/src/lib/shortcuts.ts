@@ -36,9 +36,17 @@ export const SHORTCUTS: Record<string, ShortcutDef> = {
     label: 'Toggle Viewer',
     inEditor: false,
   },
+  commandPalette: {
+    id: 'commandPalette',
+    key: 'k',
+    ctrl: true,
+    shift: false,
+    label: 'Command Palette',
+  },
 };
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent);
+export const isMac =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent);
 
 export function formatShortcut(def: ShortcutDef): string {
   const mod = isMac ? '\u2318' : 'Ctrl';
