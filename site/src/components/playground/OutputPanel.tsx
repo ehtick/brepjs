@@ -1,4 +1,6 @@
+import { useEffect, useRef } from 'react';
 import { usePlaygroundStore } from '../../stores/playgroundStore';
+import { countErrors } from '../../lib/consoleStats';
 
 interface OutputPanelProps {
   onCollapse: () => void;
@@ -7,11 +9,33 @@ interface OutputPanelProps {
 export default function OutputPanel({ onCollapse }: OutputPanelProps) {
   const consoleOutput = usePlaygroundStore((s) => s.consoleOutput);
   const error = usePlaygroundStore((s) => s.error);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll on new content. zustand replaces the array on every
+  // `setConsoleOutput`, so identity is a reliable change signal — counter
+  // arithmetic could collide across evals (eval A 4 lines → eval B error
+  // adds 1 → eval C 4 lines clears error: net same number, missed scroll).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [consoleOutput, error]);
+
+  const errorCount = countErrors(consoleOutput, error);
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-gray-800 px-3 py-1">
-        <span className="text-xs font-medium text-gray-300">Console</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-gray-300">Console</span>
+          {errorCount > 0 && (
+            <span
+              className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-red-300"
+              title={`${errorCount} error${errorCount === 1 ? '' : 's'}`}
+            >
+              {errorCount}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-1">
           <button
             onClick={() => {
@@ -62,7 +86,11 @@ export default function OutputPanel({ onCollapse }: OutputPanelProps) {
           </button>
         </div>
       </div>
-      <div className="scrollbar-thin flex-1 overflow-auto p-2 font-mono text-xs" aria-live="polite">
+      <div
+        ref={scrollRef}
+        className="scrollbar-thin flex-1 overflow-auto p-2 font-mono text-xs"
+        aria-live="polite"
+      >
         {consoleOutput.length === 0 && !error ? (
           <div className="flex h-full items-center justify-center text-gray-500">
             Console output appears here
