@@ -10,6 +10,7 @@ import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { SHORTCUTS, formatShortcut } from '../../lib/shortcuts';
 import { startWASMPreload } from '../../lib/wasmPreloader.js';
 import { DEFAULT_CODE } from '../../lib/constants';
+import { copyToClipboard } from '../../lib/copyToClipboard';
 import Toolbar from './Toolbar';
 import EditorPanel from './EditorPanel';
 import ViewerPanel from './ViewerPanel';
@@ -51,8 +52,10 @@ export default function PlaygroundPage() {
   const toggleEdges = useViewerStore((s) => s.toggleEdges);
   const toggleGrid = useViewerStore((s) => s.toggleGrid);
   const toggleProjection = useViewerStore((s) => s.toggleProjection);
+  const resetViewerDefaults = useViewerStore((s) => s.resetViewerDefaults);
   const requestFit = useViewerStore((s) => s.requestFit);
   const setCameraPreset = useViewerStore((s) => s.setCameraPreset);
+  const clearSelections = usePlaygroundStore((s) => s.clearSelections);
 
   // Layout persistence
   const storage = typeof window !== 'undefined' ? localStorage : undefined;
@@ -97,6 +100,20 @@ export default function PlaygroundPage() {
     clearDraft();
     addToast('Reset to default code');
   }, [addToast]);
+
+  // copyToClipboard handles both undefined `navigator.clipboard` (HTTP /
+  // sandboxed iframe / older browsers) and a sync throw — neither of which
+  // a bare `navigator.clipboard?.writeText(...).then(...)` chain catches.
+  const handleCopyCode = useCallback(() => {
+    void copyToClipboard(code).then((copied) => {
+      addToast(copied ? 'Code copied to clipboard' : 'Clipboard unavailable');
+    });
+  }, [code, addToast]);
+
+  const handleResetViewer = useCallback(() => {
+    resetViewerDefaults();
+    addToast('Viewer settings reset');
+  }, [resetViewerDefaults, addToast]);
 
   const toggleConsole = useCallback(() => {
     const panel = consolePanelRef.current;
@@ -271,6 +288,12 @@ export default function PlaygroundPage() {
         label: 'Toggle projection (perspective/ortho)',
         run: toggleProjection,
       },
+      {
+        id: 'reset-viewer',
+        group: 'View',
+        label: 'Reset viewer to defaults',
+        run: handleResetViewer,
+      },
       { id: 'fit', group: 'Camera', label: 'Fit to view', run: requestFit },
       {
         id: 'cam-front',
@@ -311,6 +334,18 @@ export default function PlaygroundPage() {
         run: handleResetToDefault,
       },
       {
+        id: 'copy-code',
+        group: 'Editor',
+        label: 'Copy code to clipboard',
+        run: handleCopyCode,
+      },
+      {
+        id: 'clear-selection',
+        group: 'Selection',
+        label: 'Clear selection',
+        run: clearSelections,
+      },
+      {
         id: 'help',
         group: 'Help',
         label: 'Show keyboard shortcuts',
@@ -324,6 +359,9 @@ export default function PlaygroundPage() {
       handleRun,
       handleShare,
       handleResetToDefault,
+      handleResetViewer,
+      handleCopyCode,
+      clearSelections,
       handleExportSTL,
       handleExportSTEP,
       handleFormat,
