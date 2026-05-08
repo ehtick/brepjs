@@ -77,6 +77,8 @@ import * as repairOps from './repairOps.js';
 import * as meshOps from './meshOps.js';
 import * as curveOps from './curveOps.js';
 import * as surfaceOps from './surfaceOps.js';
+import * as measureOps from './measureOps.js';
+import * as modifierOps from './modifierOps.js';
 
 // Helpers (handle wrapping, vector marshalling) live in ./helpers.ts so
 // per-section files like ./booleanOps.ts can share them without depending
@@ -1369,13 +1371,7 @@ export class OcctWasmAdapter implements KernelAdapter {
     edges: KernelShape[],
     radius: number | [number, number] | ((edge: KernelShape) => number | [number, number])
   ): KernelShape {
-    const r = resolveUniformRadius(edges, radius);
-    const vec = makeVecU32(this.Module, edges.map(unwrap));
-    try {
-      return wrapResult(this.k, this.k.fillet(unwrap(shape), vec, r));
-    } finally {
-      vec.delete();
-    }
+    return modifierOps.fillet(this.k, this.Module, shape, edges, radius);
   }
 
   chamfer(
@@ -1383,13 +1379,7 @@ export class OcctWasmAdapter implements KernelAdapter {
     edges: KernelShape[],
     distance: number | [number, number] | ((edge: KernelShape) => number | [number, number])
   ): KernelShape {
-    const d = resolveUniformRadius(edges, distance);
-    const vec = makeVecU32(this.Module, edges.map(unwrap));
-    try {
-      return wrapResult(this.k, this.k.chamfer(unwrap(shape), vec, d));
-    } finally {
-      vec.delete();
-    }
+    return modifierOps.chamfer(this.k, this.Module, shape, edges, distance);
   }
 
   chamferDistAngle(
@@ -1398,12 +1388,7 @@ export class OcctWasmAdapter implements KernelAdapter {
     distance: number,
     angleDeg: number
   ): KernelShape {
-    const vec = makeVecU32(this.Module, edges.map(unwrap));
-    try {
-      return wrapResult(this.k, this.k.chamferDistAngle(unwrap(shape), vec, distance, angleDeg));
-    } finally {
-      vec.delete();
-    }
+    return modifierOps.chamferDistAngle(this.k, this.Module, shape, edges, distance, angleDeg);
   }
 
   shell(
@@ -1412,74 +1397,33 @@ export class OcctWasmAdapter implements KernelAdapter {
     thickness: number,
     tolerance?: number
   ): KernelShape {
-    const vec = makeVecU32(this.Module, faces.map(unwrap));
-    try {
-      return wrapResult(this.k, this.k.shell(unwrap(shape), vec, thickness, tolerance ?? 1e-3));
-    } finally {
-      vec.delete();
-    }
+    return modifierOps.shell(this.k, this.Module, shape, faces, thickness, tolerance);
   }
 
   thicken(shape: KernelShape, thickness: number): KernelShape {
-    // 1e-3 matches OCCT's pre-3.0 hardcoded default; brepjs's KernelInstance
-    // interface doesn't expose tolerance for thicken, so we keep the prior
-    // behavior. Bump to 1e-6 if/when the interface widens to accept it.
-    return wrapResult(this.k, this.k.thicken(unwrap(shape), thickness, 1e-3));
+    return modifierOps.thicken(this.k, shape, thickness);
   }
 
   offset(shape: KernelShape, distance: number, tolerance?: number): KernelShape {
-    return wrapResult(this.k, this.k.offset(unwrap(shape), distance, tolerance ?? 1e-6));
+    return modifierOps.offset(this.k, shape, distance, tolerance);
   }
 
   filletVariable(shape: KernelShape, spec: string): KernelShape {
-    // Parse the spec JSON to get edge + radii
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON parse
-    const parsed: any = JSON.parse(spec);
-    if (
-      parsed.edgeId !== undefined &&
-      parsed.startRadius !== undefined &&
-      parsed.endRadius !== undefined
-    ) {
-      return wrapResult(
-        this.k,
-        this.k.filletVariable(unwrap(shape), parsed.edgeId, parsed.startRadius, parsed.endRadius)
-      );
-    }
-    notImplemented('filletVariable (complex spec)');
+    return modifierOps.filletVariable(this.k, shape, spec);
   }
 
   draft(
     shape: KernelShape,
     faces: KernelShape[],
     pullDirection: [number, number, number],
-    _neutralPlane: [number, number, number],
+    neutralPlane: [number, number, number],
     angleDeg: number | ((face: KernelShape) => number)
   ): KernelShape {
-    // Apply draft to each face sequentially
-    let currentId = unwrap(shape);
-    for (const face of faces) {
-      const angle = typeof angleDeg === 'function' ? angleDeg(face) : angleDeg;
-      const angleRad = (angle * Math.PI) / 180;
-      currentId = this.k.draft(
-        currentId,
-        unwrap(face),
-        angleRad,
-        pullDirection[0],
-        pullDirection[1],
-        pullDirection[2]
-      );
-    }
-    return wrapResult(this.k, currentId);
+    return modifierOps.draft(this.k, shape, faces, pullDirection, neutralPlane, angleDeg);
   }
 
   defeature(shape: KernelShape, faces: KernelShape[]): KernelShape {
-    const vec = makeVecU32(this.Module, faces.map(unwrap));
-    try {
-      // 1e-3 matches OCCT's pre-3.0 hardcoded default; see `thicken`.
-      return wrapResult(this.k, this.k.defeature(unwrap(shape), vec, 1e-3));
-    } finally {
-      vec.delete();
-    }
+    return modifierOps.defeature(this.k, this.Module, shape, faces);
   }
 
   offsetWire2D(
@@ -1487,19 +1431,15 @@ export class OcctWasmAdapter implements KernelAdapter {
     offset: number,
     joinType?: number | 'arc' | 'intersection' | 'tangent'
   ): KernelShape {
-    let jt = 0; // arc
-    if (joinType === 'intersection' || joinType === 1) jt = 1;
-    else if (joinType === 'tangent' || joinType === 2) jt = 2;
-    else if (typeof joinType === 'number') jt = joinType;
-    return wrapResult(this.k, this.k.offsetWire2D(unwrap(wire), offset, jt));
+    return modifierOps.offsetWire2D(this.k, wire, offset, joinType);
   }
 
   simplify(shape: KernelShape): KernelShape {
-    return wrapResult(this.k, this.k.simplify(unwrap(shape)));
+    return modifierOps.simplify(this.k, shape);
   }
 
   reverseShape(shape: KernelShape): KernelShape {
-    return wrapResult(this.k, this.k.reverseShape(unwrap(shape)));
+    return modifierOps.reverseShape(this.k, shape);
   }
 
   // =========================================================================
@@ -2529,40 +2469,30 @@ export class OcctWasmAdapter implements KernelAdapter {
   // =========================================================================
 
   volume(shape: KernelShape): number {
-    return this.k.getVolume(unwrap(shape));
+    return measureOps.volume(this.k, shape);
   }
 
   area(shape: KernelShape): number {
-    return this.k.getSurfaceArea(unwrap(shape));
+    return measureOps.area(this.k, shape);
   }
 
   length(shape: KernelShape): number {
-    return this.k.getLength(unwrap(shape));
+    return measureOps.length(this.k, shape);
   }
 
   centerOfMass(shape: KernelShape): [number, number, number] {
-    const vec = this.k.getCenterOfMass(unwrap(shape));
-    const result: [number, number, number] = [vec.get(0), vec.get(1), vec.get(2)];
-    vec.delete();
-    return result;
+    return measureOps.centerOfMass(this.k, shape);
   }
 
   linearCenterOfMass(shape: KernelShape): [number, number, number] {
-    const vec = this.k.getLinearCenterOfMass(unwrap(shape));
-    const result: [number, number, number] = [vec.get(0), vec.get(1), vec.get(2)];
-    vec.delete();
-    return result;
+    return measureOps.linearCenterOfMass(this.k, shape);
   }
 
   boundingBox(shape: KernelShape): {
     min: [number, number, number];
     max: [number, number, number];
   } {
-    const bb = this.k.getBoundingBox(unwrap(shape), true);
-    return {
-      min: [bb.xmin, bb.ymin, bb.zmin],
-      max: [bb.xmax, bb.ymax, bb.zmax],
-    };
+    return measureOps.boundingBox(this.k, shape);
   }
 
   distance(shape1: KernelShape, shape2: KernelShape): DistanceResult {
@@ -2639,32 +2569,11 @@ export class OcctWasmAdapter implements KernelAdapter {
   }
 
   surfaceCenterOfMass(face: KernelShape): [number, number, number] {
-    // Delegates to occt-wasm's exact `BRepGProp::SurfaceProperties.CentreOfMass()`
-    // (added in occt-wasm 2.0). The previous tessellation-triangle centroid
-    // diverged from brepjs-occt for non-planar faces — for cylindrical faces
-    // it landed `+radius` off-axis (on the surface), and for holed planar
-    // faces it biased toward the holes' weighted x-position. See occt-wasm#90.
-    try {
-      const v = this.k.getSurfaceCenterOfMass(unwrap(face));
-      const result: [number, number, number] = [v.get(0), v.get(1), v.get(2)];
-      v.delete();
-      return result;
-    } catch {
-      // Degenerate or unmeshable face — preserve previous behavior of
-      // returning origin rather than propagating the WASM exception.
-      return [0, 0, 0];
-    }
+    return measureOps.surfaceCenterOfMass(this.k, face);
   }
 
   measureBulk(shape: KernelShape, includeLinear?: boolean): BulkMeasurement {
-    const bb = this.boundingBox(shape);
-    return {
-      volume: this.volume(shape),
-      area: this.area(shape),
-      length: includeLinear ? this.length(shape) : 0,
-      centerOfMass: this.centerOfMass(shape),
-      boundingBox: bb,
-    };
+    return measureOps.measureBulk(this.k, shape, includeLinear);
   }
 
   createDistanceQuery(referenceShape: KernelShape): {
@@ -2675,19 +2584,7 @@ export class OcctWasmAdapter implements KernelAdapter {
     };
     dispose(): void;
   } {
-    const refId = unwrap(referenceShape);
-    const k = this.k;
-    return {
-      distanceTo(shape: KernelShape) {
-        const d = k.distanceBetween(refId, unwrap(shape));
-        return {
-          value: d,
-          point1: [0, 0, 0],
-          point2: [0, 0, 0],
-        };
-      },
-      dispose: noop,
-    };
+    return measureOps.createDistanceQuery(this.k, referenceShape);
   }
 
   // =========================================================================
