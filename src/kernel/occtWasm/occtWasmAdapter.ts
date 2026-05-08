@@ -79,6 +79,9 @@ import * as curveOps from './curveOps.js';
 import * as surfaceOps from './surfaceOps.js';
 import * as measureOps from './measureOps.js';
 import * as modifierOps from './modifierOps.js';
+import * as sweepOps from './sweepOps.js';
+import * as transformOps from './transformOps.js';
+import * as ioOps from './ioOps.js';
 
 // Helpers (handle wrapping, vector marshalling) live in ./helpers.ts so
 // per-section files like ./booleanOps.ts can share them without depending
@@ -146,82 +149,7 @@ function notImplemented(method: string): never {
 }
 
 // ---------------------------------------------------------------------------
-// GLB (binary glTF 2.0) helpers — used by exportGLB
-// ---------------------------------------------------------------------------
-
-interface Vec3Bounds {
-  readonly min: [number, number, number];
-  readonly max: [number, number, number];
-}
-
-function computePositionBounds(positions: Float32Array, vCount: number): Vec3Bounds {
-  if (vCount === 0) return { min: [0, 0, 0], max: [0, 0, 0] };
-  let minX = Infinity,
-    minY = Infinity,
-    minZ = Infinity;
-  let maxX = -Infinity,
-    maxY = -Infinity,
-    maxZ = -Infinity;
-  for (let i = 0; i < vCount; i++) {
-    const o = i * 3;
-    const x = positions[o] ?? 0;
-    const y = positions[o + 1] ?? 0;
-    const z = positions[o + 2] ?? 0;
-    if (x < minX) minX = x;
-    if (y < minY) minY = y;
-    if (z < minZ) minZ = z;
-    if (x > maxX) maxX = x;
-    if (y > maxY) maxY = y;
-    if (z > maxZ) maxZ = z;
-  }
-  return { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] };
-}
-
-function buildGltfManifest(
-  vCount: number,
-  nCount: number,
-  iCount: number,
-  posBytes: number,
-  nrmBytes: number,
-  idxBytes: number,
-  bufferLength: number,
-  bounds: Vec3Bounds
-): object {
-  return {
-    asset: { version: '2.0', generator: 'brepjs occt-wasm' },
-    scene: 0,
-    scenes: [{ nodes: [0] }],
-    nodes: [{ mesh: 0 }],
-    meshes: [
-      {
-        primitives: [{ attributes: { POSITION: 0, NORMAL: 1 }, indices: 2, mode: 4 }],
-      },
-    ],
-    buffers: [{ byteLength: bufferLength }],
-    bufferViews: [
-      { buffer: 0, byteOffset: 0, byteLength: posBytes, target: 34962 },
-      { buffer: 0, byteOffset: posBytes, byteLength: nrmBytes, target: 34962 },
-      {
-        buffer: 0,
-        byteOffset: posBytes + nrmBytes,
-        byteLength: idxBytes,
-        target: 34963,
-      },
-    ],
-    accessors: [
-      {
-        bufferView: 0,
-        componentType: 5126,
-        count: vCount,
-        type: 'VEC3',
-        min: bounds.min,
-        max: bounds.max,
-      },
-      { bufferView: 1, componentType: 5126, count: nCount, type: 'VEC3' },
-      { bufferView: 2, componentType: 5125, count: iCount, type: 'SCALAR' },
-    ],
-  };
-}
+// GLB (binary glTF 2.0) helpers moved to ioOps.ts
 
 /**
  * Wrap an OcctKernelWasm instance so that every method call converts
@@ -1174,40 +1102,28 @@ export class OcctWasmAdapter implements KernelAdapter {
   // =========================================================================
 
   extrude(face: KernelShape, direction: [number, number, number], length: number): KernelShape {
-    const dx = direction[0] * length;
-    const dy = direction[1] * length;
-    const dz = direction[2] * length;
-    return wrapResult(this.k, this.k.extrude(unwrap(face), dx, dy, dz));
+    return sweepOps.extrude(this.k, face, direction, length);
   }
 
   revolve(shape: KernelShape, axis: KernelType, angle: number): KernelShape {
-    // axis is a KernelType from createAxis1
-    const o = axis.origin;
-    const d = axis.direction;
-    return wrapResult(this.k, this.k.revolve(unwrap(shape), o.x, o.y, o.z, d.x, d.y, d.z, angle));
+    return sweepOps.revolve(this.k, shape, axis, angle);
   }
 
   loft(
     wires: KernelShape[],
     ruled?: boolean,
-    _startShape?: KernelShape,
-    _endShape?: KernelShape
+    startShape?: KernelShape,
+    endShape?: KernelShape
   ): KernelShape {
-    const vec = makeVecU32(this.Module, wires.map(unwrap));
-    try {
-      return wrapResult(this.k, this.k.loft(vec, true, ruled ?? false));
-    } finally {
-      vec.delete();
-    }
+    return sweepOps.loft(this.k, this.Module, wires, ruled, startShape, endShape);
   }
 
   sweep(wire: KernelShape, spine: KernelShape, options?: { transitionMode?: number }): KernelShape {
-    const mode = options?.transitionMode ?? 0;
-    return wrapResult(this.k, this.k.sweep(unwrap(wire), unwrap(spine), mode));
+    return sweepOps.sweep(this.k, wire, spine, options);
   }
 
   simplePipe(profile: KernelShape, spine: KernelShape): KernelShape {
-    return wrapResult(this.k, this.k.simplePipe(unwrap(profile), unwrap(spine)));
+    return sweepOps.simplePipe(this.k, profile, spine);
   }
 
   helicalSweep(
@@ -1262,26 +1178,7 @@ export class OcctWasmAdapter implements KernelAdapter {
       maxSegments?: number | undefined;
     }
   ): KernelShape | { shape: KernelShape; firstShape: KernelShape; lastShape: KernelShape } {
-    const freenet = options?.frenet ?? false;
-    const smooth = options?.transitionMode === 'round';
-    const shellMode = options?.shellMode ?? false;
-    const result = wrapResult(
-      this.k,
-      this.k.sweepPipeShell(unwrap(profile), unwrap(spine), freenet, smooth)
-    );
-    if (shellMode) {
-      // Shell mode: return { shape, firstShape, lastShape } tuple
-      const edges = this.k.getSubShapes(unwrap(result), 'wire');
-      try {
-        const firstWire = edges.size() > 0 ? wrapResult(this.k, edges.get(0)) : result;
-        const lastWire =
-          edges.size() > 1 ? wrapResult(this.k, edges.get(edges.size() - 1)) : result;
-        return { shape: result, firstShape: firstWire, lastShape: lastWire };
-      } finally {
-        edges.delete();
-      }
-    }
-    return result;
+    return sweepOps.sweepPipeShell(this.k, profile, spine, options);
   }
 
   loftAdvanced(
@@ -1294,37 +1191,11 @@ export class OcctWasmAdapter implements KernelAdapter {
       endVertex?: KernelShape;
     }
   ): KernelShape {
-    const isSolid = options?.solid ?? true;
-    const ruled = options?.ruled ?? false;
-    const startV = options?.startVertex ? unwrap(options.startVertex) : 0;
-    const endV = options?.endVertex ? unwrap(options.endVertex) : 0;
-    const vec = makeVecU32(this.Module, wires.map(unwrap));
-    try {
-      if (startV || endV) {
-        return wrapResult(this.k, this.k.loftWithVertices(vec, isSolid, ruled, startV, endV));
-      }
-      return wrapResult(this.k, this.k.loft(vec, isSolid, ruled));
-    } finally {
-      vec.delete();
-    }
+    return sweepOps.loftAdvanced(this.k, this.Module, wires, options);
   }
 
   buildExtrusionLaw(profile: 'linear' | 's-curve', length: number, endFactor: number): KernelType {
-    // Return a JS law object with Trim method (matching OCCT Law_Linear/Law_S)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque law object
-    const law: any = {
-      __occtWasmLaw: true,
-      profile,
-      length,
-      endFactor,
-      Trim(first: number, last: number, _tol: number) {
-        return { ...law, trimFirst: first, trimLast: last };
-      },
-      delete() {
-        /* no-op */
-      },
-    };
-    return law;
+    return sweepOps.buildExtrusionLaw(this.k, profile, length, endFactor);
   }
 
   revolveVec(
@@ -1333,33 +1204,18 @@ export class OcctWasmAdapter implements KernelAdapter {
     direction: [number, number, number],
     angle: number
   ): KernelShape {
-    return wrapResult(
-      this.k,
-      this.k.revolveVec(
-        unwrap(shape),
-        center[0],
-        center[1],
-        center[2],
-        direction[0],
-        direction[1],
-        direction[2],
-        angle
-      )
-    );
+    return sweepOps.revolveVec(this.k, shape, center, direction, angle);
   }
 
   draftPrism(
     shape: KernelShape,
-    _face: KernelShape,
-    _baseFace: KernelShape,
+    face: KernelShape,
+    baseFace: KernelShape,
     height: number | null,
     angleDeg: number,
-    _fuse: boolean
+    fuse: boolean
   ): KernelShape {
-    // The C++ facade takes (shapeId, dx, dy, dz, angleDeg)
-    // Assume extrusion along Z for now
-    const h = height ?? 10;
-    return wrapResult(this.k, this.k.draftPrism(unwrap(shape), 0, 0, h, angleDeg));
+    return sweepOps.draftPrism(this.k, shape, face, baseFace, height, angleDeg, fuse);
   }
 
   // =========================================================================
@@ -1457,77 +1313,15 @@ export class OcctWasmAdapter implements KernelAdapter {
         }
     >
   ): { handle: KernelType; dispose: () => void } {
-    // Build a 4x4 identity matrix then compose using PreMultiply order
-    // (matches OCCT's trsf.PreMultiply(step) convention)
-    let matrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-    for (const op of ops) {
-      if (op.type === 'translate') {
-        const t = [1, 0, 0, op.x, 0, 1, 0, op.y, 0, 0, 1, op.z, 0, 0, 0, 1];
-        matrix = multiplyMatrices4x4(t, matrix); // PreMultiply
-      } else {
-        // Rotation — angle is DEGREES, convert to radians
-        const ax = op.axis ?? [0, 0, 1];
-        const cn = op.center ?? [0, 0, 0];
-        const rad = (op.angle * Math.PI) / 180;
-        const c = Math.cos(rad);
-        const s = Math.sin(rad);
-        const t = 1 - c;
-        const len = Math.sqrt(ax[0] ** 2 + ax[1] ** 2 + ax[2] ** 2);
-        const [ux, uy, uz] = [ax[0] / len, ax[1] / len, ax[2] / len];
-        const r00 = t * ux * ux + c;
-        const r01 = t * ux * uy - s * uz;
-        const r02 = t * ux * uz + s * uy;
-        const r10 = t * uy * ux + s * uz;
-        const r11 = t * uy * uy + c;
-        const r12 = t * uy * uz - s * ux;
-        const r20 = t * uz * ux - s * uy;
-        const r21 = t * uz * uy + s * ux;
-        const r22 = t * uz * uz + c;
-        const tx = cn[0] - (r00 * cn[0] + r01 * cn[1] + r02 * cn[2]);
-        const ty = cn[1] - (r10 * cn[0] + r11 * cn[1] + r12 * cn[2]);
-        const tz = cn[2] - (r20 * cn[0] + r21 * cn[1] + r22 * cn[2]);
-        const rm = [r00, r01, r02, tx, r10, r11, r12, ty, r20, r21, r22, tz, 0, 0, 0, 1];
-        matrix = multiplyMatrices4x4(rm, matrix); // PreMultiply
-      }
-    }
-    return {
-      handle: { __type: 'transform_matrix', matrix, delete: noop },
-      dispose: noop,
-    };
+    return transformOps.composeTransform(ops);
   }
 
   transform(shape: KernelShape, trsf: KernelType): KernelShape {
-    // Handle various transform representations
-    const t = trsf; /* transform dispatch */ // brepjs-patterns-disable: no-double-cast
-    let matrix: number[] | undefined;
-    if (Array.isArray(t)) {
-      matrix = t as number[];
-    } else if (typeof t === 'object') {
-      if (Array.isArray(t['matrix'])) {
-        matrix = t['matrix'] as number[];
-        if (matrix.length === 16) matrix = matrix.slice(0, 12);
-      } else if (Array.isArray(t['elements'])) matrix = t['elements'] as number[];
-    }
-    if (matrix) {
-      // C++ facade expects 3x4 (12 elements). If we have 4x4 (16), extract rows 0-2.
-      if (matrix.length === 16) {
-        matrix = matrix.slice(0, 12);
-      }
-      if (matrix.length >= 12) {
-        const vec = makeVecDouble(this.Module, matrix);
-        try {
-          return wrapResult(this.k, this.k.transform(unwrap(shape), vec));
-        } finally {
-          vec.delete();
-        }
-      }
-    }
-    // Fallback: just copy the shape (identity transform)
-    return handle(this.k.getShapeType(unwrap(shape)) as ShapeType, this.k.copy(unwrap(shape)));
+    return transformOps.transform(this.k, this.Module, shape, trsf);
   }
 
   translate(shape: KernelShape, x: number, y: number, z: number): KernelShape {
-    return wrapResult(this.k, this.k.translate(unwrap(shape), x, y, z));
+    return transformOps.translate(this.k, shape, x, y, z);
   }
 
   rotate(
@@ -1536,12 +1330,7 @@ export class OcctWasmAdapter implements KernelAdapter {
     axis?: readonly [number, number, number],
     center?: readonly [number, number, number]
   ): KernelShape {
-    const ax = axis ?? [0, 0, 1];
-    const cn = center ?? [0, 0, 0];
-    return wrapResult(
-      this.k,
-      this.k.rotate(unwrap(shape), cn[0], cn[1], cn[2], ax[0], ax[1], ax[2], angle)
-    );
+    return transformOps.rotate(this.k, shape, angle, axis, center);
   }
 
   mirror(
@@ -1549,10 +1338,7 @@ export class OcctWasmAdapter implements KernelAdapter {
     origin: readonly [number, number, number],
     normal: readonly [number, number, number]
   ): KernelShape {
-    return wrapResult(
-      this.k,
-      this.k.mirror(unwrap(shape), origin[0], origin[1], origin[2], normal[0], normal[1], normal[2])
-    );
+    return transformOps.mirror(this.k, shape, origin, normal);
   }
 
   scale(
@@ -1560,36 +1346,23 @@ export class OcctWasmAdapter implements KernelAdapter {
     center: readonly [number, number, number],
     factor: number
   ): KernelShape {
-    return wrapResult(this.k, this.k.scale(unwrap(shape), center[0], center[1], center[2], factor));
+    return transformOps.scale(this.k, shape, center, factor);
   }
 
   generalTransform(
     shape: KernelShape,
     linear: readonly [number, number, number, number, number, number, number, number, number],
     translation: readonly [number, number, number],
-    _isOrthogonal: boolean
+    isOrthogonal: boolean
   ): KernelShape {
-    // Build 3x4 row-major from 3x3 linear + translation (C++ facade expects 12 elements)
-    const matrix = [
-      linear[0],
-      linear[1],
-      linear[2],
-      translation[0],
-      linear[3],
-      linear[4],
-      linear[5],
-      translation[1],
-      linear[6],
-      linear[7],
-      linear[8],
-      translation[2],
-    ];
-    const vec = makeVecDouble(this.Module, matrix);
-    try {
-      return wrapResult(this.k, this.k.generalTransform(unwrap(shape), vec));
-    } finally {
-      vec.delete();
-    }
+    return transformOps.generalTransform(
+      this.k,
+      this.Module,
+      shape,
+      linear,
+      translation,
+      isOrthogonal
+    );
   }
 
   generalTransformNonOrthogonal(
@@ -1597,66 +1370,11 @@ export class OcctWasmAdapter implements KernelAdapter {
     linear: readonly [number, number, number, number, number, number, number, number, number],
     translation: readonly [number, number, number]
   ): KernelShape {
-    return this.generalTransform(shape, linear, translation, false);
+    return transformOps.generalTransform(this.k, this.Module, shape, linear, translation, false);
   }
 
   positionOnCurve(shape: KernelShape, spine: KernelShape, param: number): KernelShape {
-    // Compute Frenet frame at param: point + tangent direction
-    const ptVec = this.k.curvePointAtParam(unwrap(spine), param);
-    const tgVec = this.k.curveTangent(unwrap(spine), param);
-    const px = ptVec.get(0),
-      py = ptVec.get(1),
-      pz = ptVec.get(2);
-    const tx = tgVec.get(0),
-      ty = tgVec.get(1),
-      tz = tgVec.get(2);
-    ptVec.delete();
-    tgVec.delete();
-
-    // Build rotation from Z-axis to tangent direction
-    // Standard frame: origin at (0,0,0), Z-up → target frame: at (px,py,pz), tangent direction
-    // Tangent = new Z direction
-    // Pick a perpendicular X direction
-    let ux: number, uy: number, uz: number;
-    if (Math.abs(tx) < 0.9) {
-      // cross(tangent, (1,0,0))
-      ux = 0;
-      uy = tz;
-      uz = -ty;
-    } else {
-      // cross(tangent, (0,1,0))
-      ux = -tz;
-      uy = 0;
-      uz = tx;
-    }
-    const uLen = Math.sqrt(ux * ux + uy * uy + uz * uz);
-    ux /= uLen;
-    uy /= uLen;
-    uz /= uLen;
-    // V = cross(tangent, U)
-    const vx = ty * uz - tz * uy;
-    const vy = tz * ux - tx * uz;
-    const vz = tx * uy - ty * ux;
-
-    // 3x4 transform matrix: [ux,vx,tx,px, uy,vy,ty,py, uz,vz,tz,pz]
-    const mat = new this.Module.VectorDouble();
-    mat.push_back(ux);
-    mat.push_back(vx);
-    mat.push_back(tx);
-    mat.push_back(px);
-    mat.push_back(uy);
-    mat.push_back(vy);
-    mat.push_back(ty);
-    mat.push_back(py);
-    mat.push_back(uz);
-    mat.push_back(vz);
-    mat.push_back(tz);
-    mat.push_back(pz);
-    try {
-      return wrapResult(this.k, this.k.transform(unwrap(shape), mat));
-    } finally {
-      mat.delete();
-    }
+    return transformOps.positionOnCurve(this.k, this.Module, shape, spine, param);
   }
 
   linearPattern(
@@ -1665,33 +1383,7 @@ export class OcctWasmAdapter implements KernelAdapter {
     spacing: number,
     count: number
   ): KernelShape[] {
-    // The C++ linearPattern returns a compound; we need to extract sub-shapes
-    const compoundId = this.k.linearPattern(
-      unwrap(shape),
-      direction[0],
-      direction[1],
-      direction[2],
-      spacing,
-      count
-    );
-    // Extract solids from compound
-    const subVec = this.k.getSubShapes(compoundId, 'solid');
-    const results: KernelShape[] = [];
-    const n = subVec.size();
-    for (let i = 0; i < n; i++) {
-      results.push(handle('solid', subVec.get(i)));
-    }
-    subVec.delete();
-    // If no solids, try returning the compound's iterShapes
-    if (results.length === 0) {
-      const iter = this.k.iterShapes(compoundId);
-      const n2 = iter.size();
-      for (let i = 0; i < n2; i++) {
-        results.push(wrapResult(this.k, iter.get(i)));
-      }
-      iter.delete();
-    }
-    return results;
+    return transformOps.linearPattern(this.k, shape, direction, spacing, count);
   }
 
   circularPattern(
@@ -1701,56 +1393,11 @@ export class OcctWasmAdapter implements KernelAdapter {
     angleStep: number,
     count: number
   ): KernelShape[] {
-    const compoundId = this.k.circularPattern(
-      unwrap(shape),
-      center[0],
-      center[1],
-      center[2],
-      axis[0],
-      axis[1],
-      axis[2],
-      angleStep,
-      count
-    );
-    const subVec = this.k.getSubShapes(compoundId, 'solid');
-    const results: KernelShape[] = [];
-    try {
-      const n = subVec.size();
-      for (let i = 0; i < n; i++) {
-        results.push(handle('solid', subVec.get(i)));
-      }
-    } finally {
-      subVec.delete();
-    }
-    if (results.length === 0) {
-      const iter = this.k.iterShapes(compoundId);
-      try {
-        const n2 = iter.size();
-        for (let i = 0; i < n2; i++) {
-          results.push(wrapResult(this.k, iter.get(i)));
-        }
-      } finally {
-        iter.delete();
-      }
-    }
-    return results;
+    return transformOps.circularPattern(this.k, shape, center, axis, angleStep, count);
   }
 
   transformBatch(entries: TransformEntry[]): KernelShape[] {
-    return entries.map((entry) => {
-      switch (entry.type) {
-        case 'translate':
-          return this.translate(entry.shape, entry.x, entry.y, entry.z);
-        case 'rotate':
-          return this.rotate(entry.shape, entry.angle, entry.axis, entry.center);
-        case 'scale':
-          return this.scale(entry.shape, entry.center, entry.factor);
-        case 'mirror':
-          return this.mirror(entry.shape, entry.origin, entry.normal);
-        default:
-          notImplemented('transformBatch unknown type');
-      }
-    });
+    return transformOps.transformBatch(this.k, entries);
   }
 
   // =========================================================================
@@ -2137,80 +1784,31 @@ export class OcctWasmAdapter implements KernelAdapter {
   // =========================================================================
 
   exportSTEP(shapes: KernelShape[]): string {
-    if (shapes.length === 1) {
-      return this.k.exportStep(unwrap(shapes[0]));
-    }
-    // Compound all shapes and export
-    const compound = this.makeCompound(shapes);
-    return this.k.exportStep(unwrap(compound));
+    return ioOps.exportSTEP(this.k, this.makeCompound.bind(this), shapes);
   }
 
   exportSTL(shape: KernelShape, binary?: boolean): string | ArrayBuffer {
-    const ascii = !binary;
-    const result = this.k.exportStl(unwrap(shape), 0.1, ascii);
-    if (binary) {
-      const buf = new ArrayBuffer(result.length);
-      const view = new Uint8Array(buf);
-      for (let i = 0; i < result.length; i++) {
-        view[i] = result.charCodeAt(i);
-      }
-      return buf;
-    }
-    return result;
+    return ioOps.exportSTL(this.k, shape, binary);
   }
 
   importSTEP(data: string | ArrayBuffer): KernelShape[] {
-    const str = typeof data === 'string' ? data : new TextDecoder().decode(data);
-    const id = this.k.importStep(str);
-    return [wrapResult(this.k, id)];
+    return ioOps.importSTEP(this.k, data);
   }
 
   importSTL(data: string | ArrayBuffer): KernelShape {
-    // Binary STL contains null bytes that corrupt Embind's std::string.
-    // Write raw bytes to the Emscripten virtual FS, then call importStl with
-    // the file path (passed as an empty string sentinel to read from /tmp).
-    const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : new Uint8Array(data);
-
-    // Write to Emscripten FS directly via HEAPU8
-    const mod = this.Module as OcctWasmModule & {
-      FS?: { writeFile(path: string, data: Uint8Array): void };
-    };
-    if (mod.FS) {
-      mod.FS.writeFile('/tmp/import.stl', bytes);
-    } else {
-      // Fallback: pass as Latin-1 string (works for ASCII STL only)
-      const str = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
-      const id = this.k.importStl(str);
-      return wrapResult(this.k, id);
-    }
-
-    // Call importStl with empty string — the C++ side reads from /tmp/import.stl
-    const id = this.k.importStl('');
-    return wrapResult(this.k, id);
+    return ioOps.importSTL(this.k, this.Module, data);
   }
 
   exportIGES(shapes: KernelShape[]): string {
-    if (shapes.length === 1) {
-      return this.k.exportIges(unwrap(shapes[0]));
-    }
-    const compound = this.makeCompound(shapes);
-    return this.k.exportIges(unwrap(compound));
+    return ioOps.exportIGES(this.k, this.makeCompound.bind(this), shapes);
   }
 
   importIGES(data: string | ArrayBuffer): KernelShape[] {
-    const str = typeof data === 'string' ? data : new TextDecoder().decode(data);
-    const id = this.k.importIges(str);
-    return [wrapResult(this.k, id)];
+    return ioOps.importIGES(this.k, data);
   }
 
-  exportSTEPAssembly(parts: StepAssemblyPart[], _options?: { unit?: string }): string {
-    if (parts.length === 0) return '';
-    const doc = this.createXCAFDocument(parts);
-    try {
-      return this.writeXCAFToSTEP(doc);
-    } finally {
-      doc.delete();
-    }
+  exportSTEPAssembly(parts: StepAssemblyPart[], options?: { unit?: string }): string {
+    return ioOps.exportSTEPAssembly(this.k, this.Module, parts, options);
   }
 
   export3MF(_shape: KernelShape, _tolerance: number): ArrayBuffer {
@@ -2218,155 +1816,15 @@ export class OcctWasmAdapter implements KernelAdapter {
   }
 
   exportGLB(shape: KernelShape, tolerance: number): ArrayBuffer {
-    const result = this.mesh(shape, {
-      tolerance,
-      angularTolerance: 0.5,
-      skipNormals: false,
-    });
-    const positions = result.vertices;
-    const normals = result.normals;
-    const indices = result.triangles;
-    const vCount = positions.length / 3;
-    const nCount = normals.length / 3;
-    const iCount = indices.length;
-
-    // Binary buffer: positions | normals | indices. All components are
-    // 4 bytes, so segment offsets are naturally aligned.
-    const posBytes = positions.byteLength;
-    const nrmBytes = normals.byteLength;
-    const idxBytes = indices.byteLength;
-    const binLength = posBytes + nrmBytes + idxBytes;
-    const paddedBinLength = binLength + ((4 - (binLength % 4)) % 4);
-
-    const manifest = buildGltfManifest(
-      vCount,
-      nCount,
-      iCount,
-      posBytes,
-      nrmBytes,
-      idxBytes,
-      paddedBinLength,
-      computePositionBounds(positions, vCount)
-    );
-    const jsonBytes = new TextEncoder().encode(JSON.stringify(manifest));
-    const paddedJsonLength = jsonBytes.byteLength + ((4 - (jsonBytes.byteLength % 4)) % 4);
-
-    const totalLength = 12 + 8 + paddedJsonLength + 8 + paddedBinLength;
-    const glb = new ArrayBuffer(totalLength);
-    const view = new DataView(glb);
-
-    view.setUint32(0, 0x46546c67, true);
-    view.setUint32(4, 2, true);
-    view.setUint32(8, totalLength, true);
-    view.setUint32(12, paddedJsonLength, true);
-    view.setUint32(16, 0x4e4f534a, true);
-    const jsonDst = new Uint8Array(glb, 20, paddedJsonLength);
-    jsonDst.set(jsonBytes);
-    for (let i = jsonBytes.byteLength; i < paddedJsonLength; i++) jsonDst[i] = 0x20;
-
-    const binHeaderOffset = 20 + paddedJsonLength;
-    view.setUint32(binHeaderOffset, paddedBinLength, true);
-    view.setUint32(binHeaderOffset + 4, 0x004e4942, true);
-    const binDataOffset = binHeaderOffset + 8;
-    new Uint8Array(glb, binDataOffset, posBytes).set(
-      new Uint8Array(positions.buffer, positions.byteOffset, posBytes)
-    );
-    new Uint8Array(glb, binDataOffset + posBytes, nrmBytes).set(
-      new Uint8Array(normals.buffer, normals.byteOffset, nrmBytes)
-    );
-    new Uint8Array(glb, binDataOffset + posBytes + nrmBytes, idxBytes).set(
-      new Uint8Array(indices.buffer, indices.byteOffset, idxBytes)
-    );
-    return glb;
+    return ioOps.exportGLB(this.mesh.bind(this), shape, tolerance);
   }
 
   exportOBJ(shape: KernelShape, tolerance: number): ArrayBuffer {
-    const result = this.mesh(shape, {
-      tolerance,
-      angularTolerance: 0.5,
-      skipNormals: false,
-    });
-    const v = result.vertices;
-    const n = result.normals;
-    const t = result.triangles;
-
-    const lines: string[] = ['# brepjs OBJ export'];
-    const vCount = v.length / 3;
-    for (let i = 0; i < vCount; i++) {
-      const o = i * 3;
-      lines.push(`v ${v[o] ?? 0} ${v[o + 1] ?? 0} ${v[o + 2] ?? 0}`);
-    }
-    const nCount = n.length / 3;
-    for (let i = 0; i < nCount; i++) {
-      const o = i * 3;
-      lines.push(`vn ${n[o] ?? 0} ${n[o + 1] ?? 0} ${n[o + 2] ?? 0}`);
-    }
-    const pushTri = (offset: number) => {
-      const a = (t[offset] ?? 0) + 1;
-      const b = (t[offset + 1] ?? 0) + 1;
-      const c = (t[offset + 2] ?? 0) + 1;
-      lines.push(`f ${a}//${a} ${b}//${b} ${c}//${c}`);
-    };
-    if (result.faceGroups.length > 0) {
-      for (const group of result.faceGroups) {
-        lines.push(`g face_${group.faceHash}`);
-        const count = group.count / 3;
-        for (let i = 0; i < count; i++) pushTri(group.start + i * 3);
-      }
-    } else {
-      const triCount = t.length / 3;
-      for (let i = 0; i < triCount; i++) pushTri(i * 3);
-    }
-    return new TextEncoder().encode(lines.join('\n') + '\n').buffer;
+    return ioOps.exportOBJ(this.mesh.bind(this), shape, tolerance);
   }
 
   exportPLY(shape: KernelShape, tolerance: number): ArrayBuffer {
-    const result = this.mesh(shape, {
-      tolerance,
-      angularTolerance: 0.5,
-      skipNormals: false,
-    });
-    const v = result.vertices;
-    const n = result.normals;
-    const t = result.triangles;
-    const vCount = v.length / 3;
-    const triCount = t.length / 3;
-    const hasNormals = n.length === v.length;
-
-    const lines: string[] = [
-      'ply',
-      'format ascii 1.0',
-      'comment brepjs PLY export',
-      `element vertex ${vCount}`,
-      'property float x',
-      'property float y',
-      'property float z',
-    ];
-    if (hasNormals) {
-      lines.push('property float nx', 'property float ny', 'property float nz');
-    }
-    lines.push(`element face ${triCount}`, 'property list uchar int vertex_index', 'end_header');
-    for (let i = 0; i < vCount; i++) {
-      const o = i * 3;
-      const x = v[o] ?? 0;
-      const y = v[o + 1] ?? 0;
-      const z = v[o + 2] ?? 0;
-      if (hasNormals) {
-        const nx = n[o] ?? 0;
-        const ny = n[o + 1] ?? 0;
-        const nz = n[o + 2] ?? 0;
-        lines.push(`${x} ${y} ${z} ${nx} ${ny} ${nz}`);
-      } else {
-        lines.push(`${x} ${y} ${z}`);
-      }
-    }
-    for (let i = 0; i < triCount; i++) {
-      const a = t[i * 3] ?? 0;
-      const b = t[i * 3 + 1] ?? 0;
-      const c = t[i * 3 + 2] ?? 0;
-      lines.push(`3 ${a} ${b} ${c}`);
-    }
-    return new TextEncoder().encode(lines.join('\n') + '\n').buffer;
+    return ioOps.exportPLY(this.mesh.bind(this), shape, tolerance);
   }
 
   import3MF(_data: ArrayBuffer): KernelShape[] {
@@ -2382,11 +1840,11 @@ export class OcctWasmAdapter implements KernelAdapter {
   }
 
   toBREP(shape: KernelShape): string {
-    return this.k.toBREP(unwrap(shape));
+    return ioOps.toBREP(this.k, shape);
   }
 
   fromBREP(data: string): KernelShape {
-    return wrapResult(this.k, this.k.fromBREP(data));
+    return ioOps.fromBREP(this.k, data);
   }
 
   createXCAFDocument(
@@ -2396,46 +1854,14 @@ export class OcctWasmAdapter implements KernelAdapter {
       color?: [number, number, number, number] | undefined;
     }>
   ): KernelType {
-    const ids = new this.Module.VectorUint32();
-    const nameParts: string[] = [];
-    const colors = new this.Module.VectorDouble();
-    for (const entry of shapes) {
-      ids.push_back(unwrap(entry.shape));
-      nameParts.push(entry.name);
-      const [r, g, b, a] = entry.color ?? [0.5, 0.5, 0.5, 1];
-      colors.push_back(r);
-      colors.push_back(g);
-      colors.push_back(b);
-      colors.push_back(a);
-    }
-    try {
-      const joinedNames = nameParts.join('\0');
-      const docId = this.k.createXCAFDocument(ids, joinedNames, colors);
-      // brepjs-patterns-disable: no-double-cast
-      return handle('compound', docId);
-    } finally {
-      ids.delete();
-      colors.delete();
-    }
+    return ioOps.createXCAFDocument(this.k, this.Module, shapes);
   }
 
   writeXCAFToSTEP(
     doc: KernelType,
-    _options?: { unit?: string | undefined; modelUnit?: string | undefined }
+    options?: { unit?: string | undefined; modelUnit?: string | undefined }
   ): string {
-    // brepjs-patterns-disable: no-double-cast
-    const id = unwrap(doc);
-    // Empty documents (0 shapes) — check by looking for any sub-shapes
-    const subs = this.k.getSubShapes(id, 'solid');
-    const hasSolids = subs.size() > 0;
-    subs.delete();
-    if (!hasSolids) {
-      const faces = this.k.getSubShapes(id, 'face');
-      const hasFaces = faces.size() > 0;
-      faces.delete();
-      if (!hasFaces) return '';
-    }
-    return this.k.writeXCAFToSTEP(id);
+    return ioOps.writeXCAFToSTEP(this.k, doc, options);
   }
 
   exportSTEPConfigured(
@@ -2444,24 +1870,13 @@ export class OcctWasmAdapter implements KernelAdapter {
       name?: string | undefined;
       color?: [number, number, number, number] | undefined;
     }>,
-    _options?: {
+    options?: {
       unit?: string | undefined;
       modelUnit?: string | undefined;
       schema?: number | undefined;
     }
   ): string {
-    if (shapes.length === 0) return '';
-    const named = shapes.map((s) => ({
-      shape: s.shape,
-      name: s.name ?? '',
-      color: s.color,
-    }));
-    const doc = this.createXCAFDocument(named);
-    try {
-      return this.writeXCAFToSTEP(doc);
-    } finally {
-      doc.delete();
-    }
+    return ioOps.exportSTEPConfigured(this.k, this.Module, shapes, options);
   }
 
   // =========================================================================
@@ -3742,18 +3157,7 @@ export class OcctWasmAdapter implements KernelAdapter {
 // Matrix multiplication helper (4x4 row-major)
 // ---------------------------------------------------------------------------
 
-function multiplyMatrices4x4(a: number[], b: number[]): number[] {
-  const result = new Array(16).fill(0) as number[];
-  for (let i = 0; i < 4; i++) {
-    for (let j = 0; j < 4; j++) {
-      for (let k = 0; k < 4; k++) {
-        result[i * 4 + j] =
-          (result[i * 4 + j] as number) + (a[i * 4 + k] as number) * (b[k * 4 + j] as number);
-      }
-    }
-  }
-  return result;
-}
+// multiplyMatrices4x4 has moved to helpers.ts
 
 // --- Convex hull helpers (at module scope) ---
 function findHorizonEdges(
