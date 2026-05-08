@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "generated": "2026-05-08T22:22:49.709Z",
+  "generated": "2026-05-08T22:28:19.499Z",
   "entries": [
     {
       "file": "src/core/dimensionTypes.ts",
@@ -220,72 +220,27 @@
     {
       "file": "src/topology/wrapperFns.ts",
       "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|unwrapOrThrow(fillet(val as unknown as ValidSolid, args[0])) as unknown as T|#0"
+      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|unwrapOrThrow(fillet(asValidSolid(val), args[0])) as unknown as T|#0"
     },
     {
       "file": "src/topology/wrapperFns.ts",
       "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|val as unknown as ValidSolid|#0"
+      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|unwrapOrThrow(chamfer(asValidSolid(val), args[0])) as unknown as T|#0"
     },
     {
       "file": "src/topology/wrapperFns.ts",
       "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|unwrapOrThrow(fillet(val as unknown as ValidSolid, args[0], args[1])) as unkn...|#0"
+      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|unwrapOrThrow(shell(asValidSolid(val), faces, thickness, opts)) as unknown as T|#0"
     },
     {
       "file": "src/topology/wrapperFns.ts",
       "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|val as unknown as ValidSolid|#1"
+      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|unwrapOrThrow(offset(asValidSolid(val), distance, opts)) as unknown as T|#0"
     },
     {
       "file": "src/topology/wrapperFns.ts",
       "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|unwrapOrThrow(chamfer(val as unknown as ValidSolid, args[0])) as unknown as T|#0"
-    },
-    {
-      "file": "src/topology/wrapperFns.ts",
-      "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|val as unknown as ValidSolid|#2"
-    },
-    {
-      "file": "src/topology/wrapperFns.ts",
-      "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|unwrapOrThrow(chamfer(val as unknown as ValidSolid, args[0], args[1])) as unk...|#0"
-    },
-    {
-      "file": "src/topology/wrapperFns.ts",
-      "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|val as unknown as ValidSolid|#3"
-    },
-    {
-      "file": "src/topology/wrapperFns.ts",
-      "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|unwrapOrThrow(shell(val as unknown as ValidSolid, faces, thickness, opts)) as...|#0"
-    },
-    {
-      "file": "src/topology/wrapperFns.ts",
-      "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|val as unknown as ValidSolid|#4"
-    },
-    {
-      "file": "src/topology/wrapperFns.ts",
-      "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|unwrapOrThrow(offset(val as unknown as ValidSolid, distance, opts)) as unknow...|#0"
-    },
-    {
-      "file": "src/topology/wrapperFns.ts",
-      "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|val as unknown as ValidSolid|#5"
-    },
-    {
-      "file": "src/topology/wrapperFns.ts",
-      "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|unwrapOrThrow(draftFn(val as unknown as ValidSolid, faces, opts)) as unknown ...|#0"
-    },
-    {
-      "file": "src/topology/wrapperFns.ts",
-      "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|val as unknown as ValidSolid|#6"
+      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|unwrapOrThrow(draftFn(asValidSolid(val), faces, opts)) as unknown as T|#0"
     },
     {
       "file": "src/topology/wrapperFns.ts",
@@ -296,21 +251,6 @@
       "file": "src/topology/wrapperFns.ts",
       "rule": "no-double-cast",
       "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|unwrapOrThrow(circularPattern(val, axis, count, angle)) as unknown as T|#0"
-    },
-    {
-      "file": "src/topology/wrapperFns.ts",
-      "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|val as unknown as ClosedWire|#0"
-    },
-    {
-      "file": "src/topology/wrapperFns.ts",
-      "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|val as unknown as OrientedFace & PlanarFace|#0"
-    },
-    {
-      "file": "src/topology/wrapperFns.ts",
-      "rule": "no-double-cast",
-      "fingerprint": "src/topology/wrapperFns.ts|no-double-cast|val as unknown as OrientedFace & PlanarFace|#1"
     },
     {
       "file": "src/topology/wrapperFns.ts",
