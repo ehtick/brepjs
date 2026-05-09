@@ -5,8 +5,8 @@ export function uuidv(): string {
     (c: string) =>
       (
         Number(c) ^
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- single-element array
-        (crypto.getRandomValues(new Uint8Array(1))[0]! & (15 >> (Number(c) / 4)))
+        ((crypto.getRandomValues(new Uint8Array(1)) as unknown as [number])[0] &
+          (15 >> (Number(c) / 4)))
       ).toString(16)
   );
 }
