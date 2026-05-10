@@ -156,6 +156,30 @@ export function makeBSplineApproximation(
   }
 }
 
+export interface BSplineInterpolationOptions {
+  /** Treat the curve as periodic (closed loop). */
+  periodic?: boolean;
+  /** Vertex-coincidence tolerance. */
+  tolerance?: number;
+}
+
+/**
+ * Create a B-spline edge that passes exactly through every input point. Use
+ * over {@link makeBSplineApproximation} when downstream wire assembly needs
+ * precise endpoint coincidence with neighbouring edges.
+ */
+export function makeBSplineInterpolation(
+  points: Vec3[],
+  { periodic = false, tolerance = 1e-7 }: BSplineInterpolationOptions = {}
+): Result<Edge> {
+  try {
+    const mutablePoints: [number, number, number][] = points.map((p) => [...p]);
+    return ok(createEdge(getKernel().interpolatePoints(mutablePoints, { periodic, tolerance })));
+  } catch {
+    return err(kernelError('BSPLINE_INTERP_FAILED', 'B-spline interpolation failed'));
+  }
+}
+
 /**
  * Create a Bezier curve edge from control points.
  *
