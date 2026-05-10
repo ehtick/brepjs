@@ -5,13 +5,21 @@
  * snippet inside an AsyncFunction so `await` works.
  *
  * Markers (placed in HTML comments immediately above a fenced block):
- *   <!-- @no-test -->  : skip this block
+ *   <!-- @run-test --> : opt this block IN to the test suite (default: skipped)
  *   <!-- @setup -->    : block is hidden setup; prepended to all later snippets in the same file
+ *
+ * The default-skip policy exists because OCCT WASM doesn't yield to the JS
+ * event loop, so a stuck snippet hangs the whole worker — vitest's
+ * `testTimeout` can't preempt synchronous WASM. Snippets are opted into the
+ * test suite individually as their underlying brepjs APIs are verified to be
+ * stable. Sucrase still parses every snippet at extraction time, so syntax
+ * regressions surface even on opted-out blocks.
  *
  * Run via `npm run test:docs` (which calls this first, then vitest).
  */
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { transform } from 'sucrase';
 
 const DOCS_DIR = 'apps/docs';
 const OUT_DIR = 'tests/docs';
@@ -23,7 +31,7 @@ interface Snippet {
   startLine: number;
   setup: string;
   code: string;
-  skip: boolean;
+  run: boolean;
 }
 
 function* walk(dir: string): Generator<string> {
@@ -36,13 +44,13 @@ function* walk(dir: string): Generator<string> {
   }
 }
 
-function lookbackDirective(lines: string[], openIndex: number): { skip: boolean; setup: boolean } {
+function lookbackDirective(lines: string[], openIndex: number): { run: boolean; setup: boolean } {
   let i = openIndex - 1;
   while (i >= 0 && lines[i]?.trim() === '') i--;
-  if (i < 0) return { skip: false, setup: false };
+  if (i < 0) return { run: false, setup: false };
   const prev = lines[i] ?? '';
   return {
-    skip: prev.includes('<!-- @no-test -->'),
+    run: prev.includes('<!-- @run-test -->'),
     setup: prev.includes('<!-- @setup -->'),
   };
 }
@@ -60,7 +68,7 @@ function extractSnippets(file: string): Snippet[] {
       let j = codeStart;
       while (j < lines.length && !(lines[j] ?? '').trim().startsWith('```')) j++;
       const code = lines.slice(codeStart, j).join('\n');
-      const { skip, setup } = lookbackDirective(lines, i);
+      const { run, setup } = lookbackDirective(lines, i);
       if (setup) {
         cumulativeSetup += (cumulativeSetup ? '\n' : '') + code;
       } else {
@@ -70,7 +78,7 @@ function extractSnippets(file: string): Snippet[] {
           startLine: codeStart + 1,
           setup: cumulativeSetup,
           code,
-          skip,
+          run,
         });
       }
       i = j + 1;
@@ -96,8 +104,26 @@ function generateTestFile(snippets: Snippet[]): string {
         .map((s) => {
           const label = `${file}:${s.startLine}`;
           const fullCode = (s.setup ? `${s.setup}\n` : '') + s.code;
-          const fn = s.skip ? 'it.skip' : 'it';
-          return `  ${fn}(${JSON.stringify(label)}, async () => {\n    await runSnippet(${JSON.stringify(fullCode)});\n  });`;
+          // Pre-compile TypeScript → JavaScript so the runtime AsyncFunction
+          // sees pure JS (it can't parse type annotations or `as` casts).
+          // Sucrase preserves source layout; if it can't parse the snippet,
+          // emit a failing test that surfaces the syntax error verbatim.
+          let jsCode: string;
+          let extractError: string | null = null;
+          try {
+            jsCode = transform(fullCode, {
+              transforms: ['typescript'],
+              disableESTransforms: true,
+            }).code;
+          } catch (e) {
+            jsCode = '';
+            extractError = e instanceof Error ? e.message : String(e);
+          }
+          const fn = s.run ? 'it' : 'it.skip';
+          if (extractError) {
+            return `  ${fn}(${JSON.stringify(label)}, () => {\n    throw new Error(${JSON.stringify(`Extraction failed: ${extractError}`)});\n  });`;
+          }
+          return `  ${fn}(${JSON.stringify(label)}, async () => {\n    await runSnippet(${JSON.stringify(jsCode)});\n  });`;
         })
         .join('\n');
       return `describe(${JSON.stringify(file)}, () => {\n${cases}\n});`;
@@ -123,11 +149,13 @@ const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
   ...args: string[]
 ) => (...args: unknown[]) => Promise<unknown>;
 
-function stripImports(code: string): string {
-  // Line-by-line strip of ESM import statements. Handles both single-line
-  // (\`import { x } from 'y';\`) and multi-line (named imports broken across
-  // lines) forms. brepjs exports are injected onto globalThis above, so
-  // imports become no-ops in tests.
+function stripModuleSyntax(code: string): string {
+  // Strip ESM \`import\` statements (single- and multi-line) and rewrite
+  // top-level \`export default <expr>;\` into \`void <expr>;\`. AsyncFunction
+  // bodies cannot contain \`export\` declarations, so without the rewrite
+  // every snippet syntax-errors before execution. Keeping the value live as
+  // \`void\` avoids unused-variable noise. brepjs exports are injected onto
+  // globalThis above, so imports become no-ops.
   const lines = code.split('\\n');
   const out: string[] = [];
   let i = 0;
@@ -145,16 +173,22 @@ function stripImports(code: string): string {
         j++;
       }
       i = j + 1;
-    } else {
-      out.push(line);
-      i++;
+      continue;
     }
+    const exportDefault = line.match(/^([ \\t]*)export\\s+default\\s+(.+?);?[ \\t]*$/);
+    if (exportDefault) {
+      out.push(\`\${exportDefault[1]}void \${exportDefault[2]};\`);
+      i++;
+      continue;
+    }
+    out.push(line);
+    i++;
   }
   return out.join('\\n');
 }
 
 async function runSnippet(code: string): Promise<void> {
-  const stripped = stripImports(code);
+  const stripped = stripModuleSyntax(code);
   const fn = new AsyncFunction(stripped);
   await fn();
 }

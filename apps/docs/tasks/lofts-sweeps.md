@@ -63,6 +63,8 @@ Negative taper widens upward; positive narrows.
 
 A 2D profile rotated around an axis — the basis of every wineglass, vase, axle, and spindle:
 
+<!-- @run-test -->
+
 ```typescript
 import { Sketcher } from 'brepjs/quick';
 
@@ -167,6 +169,8 @@ Most parts work with the default. Specify `{ frame: 'auxiliary' }` when you need
 
 A solid built by smoothly interpolating between two or more profiles:
 
+<!-- @run-test -->
+
 ```typescript
 import { sketchCircle, loft, unwrap } from 'brepjs/quick';
 
@@ -182,6 +186,8 @@ The loft passes through every input profile in order. Two parallel circles of di
 > Note: `loft` takes `Wire[]`, hence the `.wire` on each sketch. The OO equivalent `sketch.loftWith(otherSketch, opts)` does that unwrapping for you.
 
 ### Multi-section lofts
+
+<!-- @run-test -->
 
 ```typescript
 import { sketchCircle, loft, unwrap } from 'brepjs/quick';
@@ -206,6 +212,8 @@ Three or more sections produces a smooth blend through every one. Useful for vas
 
 After building a solid, hollow it out by removing one or more faces and offsetting the rest by a wall thickness:
 
+<!-- @run-test -->
+
 ```typescript
 import { sketchCircle, faceFinder, shell, unwrap } from 'brepjs/quick';
 
@@ -219,6 +227,8 @@ export default cup;
 `shell(solid, openFaces, thickness)`. The top face becomes the open mouth; everything else gains the wall thickness inward.
 
 The fluent equivalent:
+
+<!-- @run-test -->
 
 ```typescript
 import { shape, sketchCircle } from 'brepjs/quick';
