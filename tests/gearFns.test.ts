@@ -232,7 +232,9 @@ describe('makePlanetaryGear', () => {
   it('Lewis stress force balance: tangential force is shared at each mesh', () => {
     // W_t = 2·T_sun / (z_sun·m). Stress σ = W_t / (F·m·Y(z)). For two gears at the
     // same mesh, σ_a / σ_b = Y(z_b) / Y(z_a). So sun:planet stress ratio depends
-    // only on Y, not on the tooth-count ratio.
+    // only on Y, not on the tooth-count ratio. The fillet K_f compounds the
+    // same direction (more teeth → lower K_f), so the ordering still holds
+    // after stress concentration is applied.
     const a = unwrap(makePlanetaryGear({ thickness: 10, appliedTorque: 10 }));
     if (!a.lewisStress) throw new Error('expected lewisStress');
     // 15-tooth sun, 12-tooth planet, Y is monotonically increasing in z, so sun has
@@ -240,6 +242,27 @@ describe('makePlanetaryGear', () => {
     expect(a.lewisStress.sun).toBeLessThan(a.lewisStress.planet);
     // Ring (39 teeth) has the highest Y → lowest stress at the planet-ring mesh.
     expect(a.lewisStress.ring).toBeLessThan(a.lewisStress.planet);
+  });
+
+  it('stressConcentrationFactor is exposed; ring uses internal-gear correction', () => {
+    const a = unwrap(makePlanetaryGear({ thickness: 10, appliedTorque: 10 }));
+    if (!a.lewisStress || !a.stressConcentrationFactor) {
+      throw new Error('expected lewisStress and stressConcentrationFactor');
+    }
+    // Sun (z=15) has fewer teeth than ring (z=39), and ring also gets the
+    // Niemann 0.85× concave-fillet reduction — both effects make sun > ring.
+    expect(a.stressConcentrationFactor.sun).toBeGreaterThan(a.stressConcentrationFactor.ring);
+    // For the default 20° pressure angle, K_f at z=15 is ~1.83.
+    expect(a.stressConcentrationFactor.sun).toBeGreaterThan(1.5);
+    expect(a.stressConcentrationFactor.sun).toBeLessThan(2.5);
+    // Ring K_f should be 0.85× the equivalent external value at z=39.
+    const externalAtZr = (1.4 + 6.5 / 39) * 1; // α=20° so the (20/20)^0.15 factor is 1
+    expect(a.stressConcentrationFactor.ring).toBeCloseTo(externalAtZr * 0.85, 4);
+  });
+
+  it('stressConcentrationFactor absent when appliedTorque omitted', () => {
+    const noTorque = unwrap(makePlanetaryGear({ thickness: 10 }));
+    expect(noTorque.stressConcentrationFactor).toBeUndefined();
   });
 
   it('emits undercut diagnostic for low-tooth-count sun without compensating shift', () => {

@@ -271,6 +271,36 @@ export function lewisRootStress(
   return (2 * torqueNmm) / (z * moduleSize * moduleSize * faceWidth * Y);
 }
 
+/**
+ * Dolan-Broghamer fit is for *external* spur teeth. Set `isInternal=true` on
+ * ring gears to apply Niemann's 0.85× reduction — the concave root fillet has
+ * a gentler geometric riser (matches AGMA 908-B89 trend).
+ */
+export function filletStressConcentrationFactor(
+  z: number,
+  alpha: number,
+  isInternal = false
+): number {
+  const kf20 = 1.4 + 6.5 / z;
+  const alphaDeg = (alpha * 180) / Math.PI;
+  const kf = kf20 * Math.pow(20 / alphaDeg, 0.15);
+  return isInternal ? kf * 0.85 : kf;
+}
+
+export function lewisRootStressCorrected(
+  appliedTorqueNm: number,
+  moduleSize: number,
+  faceWidth: number,
+  z: number,
+  alpha: number,
+  isInternal = false
+): number {
+  return (
+    lewisRootStress(appliedTorqueNm, moduleSize, faceWidth, z) *
+    filletStressConcentrationFactor(z, alpha, isInternal)
+  );
+}
+
 export function backlashHalf(totalBacklash: number): number {
   return totalBacklash / 2;
 }
