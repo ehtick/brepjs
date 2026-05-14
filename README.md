@@ -1,12 +1,18 @@
+<div align="center">
+
 # brepjs
 
 CAD modeling for JavaScript.
 
 [![npm](https://img.shields.io/npm/v/brepjs)](https://www.npmjs.com/package/brepjs)
 [![CI](https://github.com/andymai/brepjs/actions/workflows/ci.yml/badge.svg)](https://github.com/andymai/brepjs/actions/workflows/ci.yml)
+[![Last release](https://img.shields.io/github/release-date/andymai/brepjs?label=last%20release)](https://github.com/andymai/brepjs/releases)
+[![Commit activity](https://img.shields.io/github/commit-activity/m/andymai/brepjs?label=commits%2Fmonth)](https://github.com/andymai/brepjs/commits/main)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 
 **[Getting Started](./docs/getting-started.md)** · **[Cheat Sheet](./docs/cheat-sheet.md)** · **[Docs](https://brepjs.dev/)**
+
+</div>
 
 Shapes are exact mathematical boundaries - not triangle meshes - so booleans are precise, measurements are real, and you can export to STEP. TypeScript types prove the geometry is valid at compile time.
 
