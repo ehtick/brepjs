@@ -183,7 +183,17 @@ export function makeCircleEdge(
   normal: [number, number, number],
   radius: number
 ): KernelShape {
-  return makeCircleNurbs(bk, center, normal, radius, 0, 2 * Math.PI);
+  const nLen = Math.sqrt(normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2);
+  const id = bk.makeCircleEdge(
+    center[0],
+    center[1],
+    center[2],
+    normal[0] / nLen,
+    normal[1] / nLen,
+    normal[2] / nLen,
+    radius
+  );
+  return edgeHandle(id);
 }
 
 export function makeCircleArc(
@@ -295,7 +305,23 @@ export function makeEllipseEdge(
   minorRadius: number,
   xDir?: [number, number, number]
 ): KernelShape {
-  return makeEllipseNurbs(bk, center, normal, majorRadius, minorRadius, 0, 2 * Math.PI, xDir);
+  // Native binding derives the major axis from the normal frame. Honor a
+  // caller-supplied xDir by falling back to the NURBS path.
+  if (xDir !== undefined) {
+    return makeEllipseNurbs(bk, center, normal, majorRadius, minorRadius, 0, 2 * Math.PI, xDir);
+  }
+  const nLen = Math.sqrt(normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2);
+  const id = bk.makeEllipseEdge(
+    center[0],
+    center[1],
+    center[2],
+    normal[0] / nLen,
+    normal[1] / nLen,
+    normal[2] / nLen,
+    majorRadius,
+    minorRadius
+  );
+  return edgeHandle(id);
 }
 
 export function makeEllipseArc(
