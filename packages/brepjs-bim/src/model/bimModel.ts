@@ -1,12 +1,12 @@
-import type { Result } from 'brepjs';
-import { ok, err } from 'brepjs';
+import type { Result, ValidSolid } from 'brepjs';
+import { ok, err, cut } from 'brepjs';
 import type { IfcGuid } from '../identity/ifcGuid.js';
 import { newIfcGuid } from '../identity/ifcGuid.js';
 import type { LocalId } from '../identity/localId.js';
 import { makeLocalIdCounter } from '../identity/localId.js';
 import type { BimError } from '../errors/bimError.js';
-import { specError } from '../errors/bimError.js';
-import type { AnyBimElement, BimElement } from '../types/bimTypes.js';
+import { specError, fromBrepError } from '../errors/bimError.js';
+import type { AnyBimElement, BimElement, OpeningSpec } from '../types/bimTypes.js';
 import type {
   BimRelationship,
   AggregatesRel,
@@ -19,6 +19,7 @@ import type { WallSpec } from '../specs/wallSpec.js';
 import type { DoorSpec, WindowSpec } from '../specs/openingSpec.js';
 import type { ProjectSpec, SiteSpec, BuildingSpec, StoreySpec } from '../specs/spatialSpec.js';
 import { wallToSolid } from '../elementFns/wallFns.js';
+import { openingToSolid } from '../elementFns/openingFns.js';
 
 export class BimModel {
   readonly #elements = new Map<LocalId, AnyBimElement>();
@@ -78,12 +79,17 @@ export class BimModel {
     if (spec.offsetFromFloor + spec.height > wall.spec.height) {
       return err(specError('DOOR_EXCEEDS_WALL_BOUNDS', 'Door (offsetFromFloor + height) exceeds wall height'));
     }
-    const openingSpec = {
+    const openingSpec: OpeningSpec = {
       width: spec.width,
       height: spec.height,
       offsetAlongWall: spec.offsetAlongWall,
       offsetFromFloor: spec.offsetFromFloor,
     };
+
+    const cutResult = this.#cutWallGeometry(wall, openingSpec);
+    if (!cutResult.ok) return err(cutResult.error);
+    this.#replaceWallGeometry(wall, cutResult.value);
+
     const openingId = this.#makeElement('OPENING', openingSpec, null);
     this.#makeRel<VoidsWallRel>({ kind: 'VOIDS_WALL', wallLocalId: spec.wallLocalId, openingLocalId: openingId });
     const doorId = this.#makeElement('DOOR', spec, null);
@@ -107,12 +113,17 @@ export class BimModel {
     if (spec.offsetFromFloor + spec.height > wall.spec.height) {
       return err(specError('WINDOW_EXCEEDS_WALL_BOUNDS', 'Window (offsetFromFloor + height) exceeds wall height'));
     }
-    const openingSpec = {
+    const openingSpec: OpeningSpec = {
       width: spec.width,
       height: spec.height,
       offsetAlongWall: spec.offsetAlongWall,
       offsetFromFloor: spec.offsetFromFloor,
     };
+
+    const cutResult = this.#cutWallGeometry(wall, openingSpec);
+    if (!cutResult.ok) return err(cutResult.error);
+    this.#replaceWallGeometry(wall, cutResult.value);
+
     const openingId = this.#makeElement('OPENING', openingSpec, null);
     this.#makeRel<VoidsWallRel>({ kind: 'VOIDS_WALL', wallLocalId: spec.wallLocalId, openingLocalId: openingId });
     const windowId = this.#makeElement('WINDOW', spec, null);
@@ -123,6 +134,29 @@ export class BimModel {
       relatedObjects: [windowId],
     });
     return ok(windowId);
+  }
+
+  #cutWallGeometry(
+    wall: BimElement<'WALL'>,
+    openingSpec: OpeningSpec
+  ): Result<ValidSolid, BimError> {
+    const toolResult = openingToSolid(openingSpec, wall.spec.thickness);
+    if (!toolResult.ok) return err(toolResult.error);
+    using tool = toolResult.value;
+    const cutResult = cut(wall.geometry, tool);
+    if (!cutResult.ok) {
+      return err(
+        fromBrepError(cutResult.error, 'WALL_CUT_FAILED', 'Boolean cut of wall with opening failed')
+      );
+    }
+    return ok(cutResult.value);
+  }
+
+  #replaceWallGeometry(wall: BimElement<'WALL'>, newGeometry: ValidSolid): void {
+    const oldGeometry = wall.geometry;
+    const replaced: BimElement<'WALL'> = { ...wall, geometry: newGeometry };
+    this.#elements.set(wall.localId, replaced);
+    oldGeometry[Symbol.dispose]();
   }
 
   getDoors(): BimElement<'DOOR'>[] {
