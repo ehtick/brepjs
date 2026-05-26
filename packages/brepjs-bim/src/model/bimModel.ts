@@ -6,22 +6,24 @@ import type { LocalId } from '../identity/localId.js';
 import { makeLocalIdCounter } from '../identity/localId.js';
 import type { BimError } from '../errors/bimError.js';
 import { specError, fromBrepError } from '../errors/bimError.js';
-import type { AnyBimElement, BimElement, OpeningSpec } from '../types/bimTypes.js';
+import type { AnyBimElement, BimElement, WallOpeningSpec, SlabOpeningSpec } from '../types/bimTypes.js';
 import type {
   BimRelationship,
   AggregatesRel,
   ContainedInRel,
   AssociatesMaterialRel,
   VoidsWallRel,
+  VoidsSlabRel,
   FillsOpeningRel,
 } from '../types/relationships.js';
 import type { WallSpec } from '../specs/wallSpec.js';
 import type { SlabSpec } from '../specs/slabSpec.js';
-import type { DoorSpec, WindowSpec } from '../specs/openingSpec.js';
+import type { DoorSpec, WindowSpec, SlabOpeningInput } from '../specs/openingSpec.js';
 import type { ProjectSpec, SiteSpec, BuildingSpec, StoreySpec } from '../specs/spatialSpec.js';
 import { wallToSolid } from '../elementFns/wallFns.js';
 import { slabToSolid } from '../elementFns/slabFns.js';
 import { openingToSolid } from '../elementFns/openingFns.js';
+import { slabOpeningToSolid } from '../elementFns/slabOpeningFns.js';
 
 export class BimModel {
   readonly #elements = new Map<LocalId, AnyBimElement>();
@@ -93,7 +95,8 @@ export class BimModel {
     if (spec.offsetFromFloor + spec.height > wall.spec.height) {
       return err(specError('DOOR_EXCEEDS_WALL_BOUNDS', 'Door (offsetFromFloor + height) exceeds wall height'));
     }
-    const openingSpec: OpeningSpec = {
+    const openingSpec: WallOpeningSpec = {
+      kind: 'WALL_OPENING',
       width: spec.width,
       height: spec.height,
       offsetAlongWall: spec.offsetAlongWall,
@@ -127,7 +130,8 @@ export class BimModel {
     if (spec.offsetFromFloor + spec.height > wall.spec.height) {
       return err(specError('WINDOW_EXCEEDS_WALL_BOUNDS', 'Window (offsetFromFloor + height) exceeds wall height'));
     }
-    const openingSpec: OpeningSpec = {
+    const openingSpec: WallOpeningSpec = {
+      kind: 'WALL_OPENING',
       width: spec.width,
       height: spec.height,
       offsetAlongWall: spec.offsetAlongWall,
@@ -150,9 +154,57 @@ export class BimModel {
     return ok(windowId);
   }
 
+  addSlabOpening(input: SlabOpeningInput): Result<LocalId, BimError> {
+    const slab = this.#elements.get(input.slabLocalId);
+    if (slab === undefined || slab.category !== 'SLAB') {
+      return err(specError('SLAB_OPENING_SLAB_NOT_FOUND', `No slab found for localId ${input.slabLocalId}`));
+    }
+    if (input.offsetX + input.sizeX > slab.spec.length) {
+      return err(specError('SLAB_OPENING_EXCEEDS_SLAB_BOUNDS', 'Opening (offsetX + sizeX) exceeds slab length'));
+    }
+    if (input.offsetY + input.sizeY > slab.spec.width) {
+      return err(specError('SLAB_OPENING_EXCEEDS_SLAB_BOUNDS', 'Opening (offsetY + sizeY) exceeds slab width'));
+    }
+    // Reject overlap with existing slab openings — overlapping rectangles would
+    // double-subtract from NetArea/NetVolume in Qto_SlabBaseQuantities.
+    const ax0 = input.offsetX;
+    const ax1 = input.offsetX + input.sizeX;
+    const ay0 = input.offsetY;
+    const ay1 = input.offsetY + input.sizeY;
+    for (const rel of this.#relationships.values()) {
+      if (rel.kind !== 'VOIDS_SLAB' || rel.slabLocalId !== input.slabLocalId) continue;
+      const other = this.#elements.get(rel.openingLocalId);
+      if (other === undefined || other.category !== 'OPENING') continue;
+      if (other.spec.kind !== 'SLAB_OPENING') continue;
+      const bx0 = other.spec.offsetX;
+      const bx1 = other.spec.offsetX + other.spec.sizeX;
+      const by0 = other.spec.offsetY;
+      const by1 = other.spec.offsetY + other.spec.sizeY;
+      if (ax0 < bx1 && bx0 < ax1 && ay0 < by1 && by0 < ay1) {
+        return err(specError('SLAB_OPENING_OVERLAP', 'Slab opening overlaps an existing opening on the same slab'));
+      }
+    }
+
+    const openingSpec: SlabOpeningSpec = {
+      kind: 'SLAB_OPENING',
+      sizeX: input.sizeX,
+      sizeY: input.sizeY,
+      offsetX: input.offsetX,
+      offsetY: input.offsetY,
+    };
+
+    const cutResult = this.#cutSlabGeometry(slab, openingSpec);
+    if (!cutResult.ok) return err(cutResult.error);
+    this.#replaceSlabGeometry(slab, cutResult.value);
+
+    const openingId = this.#makeElement('OPENING', openingSpec, null);
+    this.#makeRel<VoidsSlabRel>({ kind: 'VOIDS_SLAB', slabLocalId: input.slabLocalId, openingLocalId: openingId });
+    return ok(openingId);
+  }
+
   #cutWallGeometry(
     wall: BimElement<'WALL'>,
-    openingSpec: OpeningSpec
+    openingSpec: WallOpeningSpec
   ): Result<ValidSolid, BimError> {
     const toolResult = openingToSolid(openingSpec, wall.spec.thickness);
     if (!toolResult.ok) return err(toolResult.error);
@@ -170,6 +222,29 @@ export class BimModel {
     const oldGeometry = wall.geometry;
     const replaced: BimElement<'WALL'> = { ...wall, geometry: newGeometry };
     this.#elements.set(wall.localId, replaced);
+    oldGeometry[Symbol.dispose]();
+  }
+
+  #cutSlabGeometry(
+    slab: BimElement<'SLAB'>,
+    openingSpec: SlabOpeningSpec
+  ): Result<ValidSolid, BimError> {
+    const toolResult = slabOpeningToSolid(openingSpec, slab.spec.thickness);
+    if (!toolResult.ok) return err(toolResult.error);
+    using tool = toolResult.value;
+    const cutResult = cut(slab.geometry, tool);
+    if (!cutResult.ok) {
+      return err(
+        fromBrepError(cutResult.error, 'SLAB_CUT_FAILED', 'Boolean cut of slab with opening failed')
+      );
+    }
+    return ok(cutResult.value);
+  }
+
+  #replaceSlabGeometry(slab: BimElement<'SLAB'>, newGeometry: ValidSolid): void {
+    const oldGeometry = slab.geometry;
+    const replaced: BimElement<'SLAB'> = { ...slab, geometry: newGeometry };
+    this.#elements.set(slab.localId, replaced);
     oldGeometry[Symbol.dispose]();
   }
 
