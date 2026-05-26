@@ -15,6 +15,12 @@ import {
   writeRelContainedInSpatialStructure,
   writeRelAssociatesMaterial,
 } from '../ifc-writer/relWriter.js';
+import {
+  writeWallCommonPset,
+  writeManufacturerPset,
+  writeCustomPsets,
+  writeWallBaseQuantities,
+} from '../ifc-writer/psetWriter.js';
 import type { BimError } from '../errors/bimError.js';
 import { ifcError } from '../errors/bimError.js';
 import type { Result } from 'brepjs';
@@ -88,6 +94,12 @@ export async function toIfc(
       w, wall.guid, `Wall ${i + 1}`, ownerHistoryId, localPlacementId, productDefinitionShapeId
     );
     idMap.set(wall.localId, wallExpressId);
+    writeWallCommonPset(w, ownerHistoryId, wallExpressId, wall.spec);
+    writeManufacturerPset(w, ownerHistoryId, wallExpressId, wall.spec);
+    if (wall.spec.customProperties !== undefined) {
+      writeCustomPsets(w, ownerHistoryId, wallExpressId, wall.spec.customProperties);
+    }
+    writeWallBaseQuantities(w, ownerHistoryId, wallExpressId, wall.spec);
   }
 
   for (const rel of relationships) {
@@ -112,15 +124,22 @@ export async function toIfc(
     );
   }
 
+  const byMaterial = new Map<string, { guid: string; ids: number[] }>();
   for (const rel of relationships) {
     if (rel.kind !== 'ASSOCIATES_MATERIAL') continue;
     const objectExpressIds = rel.relatedObjects
       .map((id) => idMap.get(id))
       .filter((id): id is number => id !== undefined);
-    if (objectExpressIds.length === 0) continue;
-    writeRelAssociatesMaterial(
-      w, rel.guid, ownerHistoryId, rel.materialName, objectExpressIds
-    );
+    const existing = byMaterial.get(rel.materialName);
+    if (existing !== undefined) {
+      byMaterial.set(rel.materialName, { guid: existing.guid, ids: [...existing.ids, ...objectExpressIds] });
+    } else {
+      byMaterial.set(rel.materialName, { guid: rel.guid, ids: objectExpressIds });
+    }
+  }
+  for (const [materialName, { guid, ids }] of byMaterial) {
+    if (ids.length === 0) continue;
+    writeRelAssociatesMaterial(w, guid, ownerHistoryId, materialName, ids);
   }
 
   return w.save();
