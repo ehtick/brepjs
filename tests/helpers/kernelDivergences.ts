@@ -126,15 +126,6 @@ export const divergences: DivergenceMap = {
     },
 
     // -----------------------------------------------------------------------
-    // nurbsFns.test.ts
-    // -----------------------------------------------------------------------
-    'nurbsFns.bsplineData': {
-      kind: 'not-implemented',
-      reason:
-        'brepkit getNurbsCurveData returns null for interpolated curves (regressed in 2.43.2)',
-    },
-
-    // -----------------------------------------------------------------------
     // sketcher3d.test.ts
     // -----------------------------------------------------------------------
     'sketcher3d.sagittaArcTo': {
