@@ -798,7 +798,6 @@ export interface BrepkitKernel {
     rz: number
   ): number;
 
-  /** @unwired */
   makePlanarFaceFromWire(wire: number): number;
 
   /** @unwired */
