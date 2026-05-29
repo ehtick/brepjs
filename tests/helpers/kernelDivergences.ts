@@ -104,15 +104,6 @@ export const divergences: DivergenceMap = {
     },
 
     // -----------------------------------------------------------------------
-    // kernel-ops.test.ts
-    // -----------------------------------------------------------------------
-    'kernelOps.variableFilletRadius': {
-      kind: 'skip',
-      reason:
-        'brepkit: variable fillet produces vol > 8000 (physically impossible -- fillet removes material)',
-    },
-
-    // -----------------------------------------------------------------------
     // kernelCall.test.ts
     // -----------------------------------------------------------------------
     'kernelCall.doubleFillet': {
