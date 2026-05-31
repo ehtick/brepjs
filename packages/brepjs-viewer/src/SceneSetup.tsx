@@ -1,9 +1,9 @@
 import { OrbitControls } from '@react-three/drei';
 import type { RefObject } from 'react';
 import type { Vector3Tuple } from 'three';
-import GradientBackground from './GradientBackground';
-import InfiniteGrid from './InfiniteGrid';
-import SceneLighting from './SceneLighting';
+import GradientBackground from './GradientBackground.js';
+import InfiniteGrid from './InfiniteGrid.js';
+import SceneLighting from './SceneLighting.js';
 
 export interface ControlsProps {
   enableDamping?: boolean;
@@ -45,17 +45,20 @@ export default function SceneSetup({
   controlsRef,
   onControlsStart,
 }: SceneSetupProps) {
+  const optionalControls = {
+    ...(controlsRef ? { ref: controlsRef } : {}),
+    ...(target ? { target } : {}),
+    ...(onControlsStart ? { onStart: onControlsStart } : {}),
+  };
   return (
     <>
       <SceneLighting />
       <GradientBackground />
       <OrbitControls
-        ref={controlsRef}
         makeDefault
         autoRotate={autoRotate}
         autoRotateSpeed={1.5}
-        target={target}
-        onStart={onControlsStart}
+        {...optionalControls}
         {...controlsProps}
       />
       {gridVisible && <InfiniteGrid {...gridProps} />}

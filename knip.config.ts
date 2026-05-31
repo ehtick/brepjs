@@ -12,10 +12,19 @@ const config: KnipConfig = {
     '.': {
       project: ['src/**/*.ts'],
       ignoreBinaries: ['tsx'],
-      // occt-wasm is dynamically imported in tests/helpers/kernelInit.ts (outside project scope)
-      ignoreDependencies: ['occt-wasm'],
+      // occt-wasm is dynamically imported in tests/helpers/kernelInit.ts (outside project scope).
+      // @types/react is pinned at the root to force ONE React-19 types copy across the monorepo
+      // (so @react-three/fiber's JSX augmentation resolves it, not a stale @types/react@18 hoist);
+      // it's consumed by the brepjs-viewer/brepjs-agent workspaces, not root src.
+      ignoreDependencies: ['occt-wasm', '@types/react'],
     },
     'packages/brepjs-opencascade': {
+      ignore: ['**'],
+    },
+    'packages/brepjs-viewer': {
+      ignore: ['**'],
+    },
+    'packages/brepjs-agent': {
       ignore: ['**'],
     },
     'apps/playground': {

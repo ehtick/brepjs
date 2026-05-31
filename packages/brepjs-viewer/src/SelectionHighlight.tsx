@@ -1,43 +1,17 @@
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
-import type { MeshData } from '../../stores/playgroundStore';
-import type { Selection } from '../../stores/playgroundStore';
+import type { MeshData } from './types.js';
 
-interface Props {
+export interface SelectionHighlightProps {
   data: MeshData;
-  selections: Selection[];
-  hoverEntity: Selection | null;
+  selectedFaceIds?: number[];
+  selectedEdgeIds?: number[];
+  hoverFaceId?: number | null;
+  hoverEdgeId?: number | null;
 }
 
 const FACE_COLOR = '#4ACECC';
 const EDGE_COLOR = '#fbbf24';
-
-/**
- * Walk the selections list and pull out the ids that match this mesh's
- * face/edge groups. With multi-shape evals the worker doesn't emit picking
- * metadata at all (see workerProtocol.MeshTransfer comment), so each id
- * matches at most one mesh in practice.
- */
-function partitionIds(
-  data: MeshData,
-  selections: Selection[]
-): { faceIds: number[]; edgeIds: number[] } {
-  const faceById = new Map<number, true>();
-  if (data.faceGroups) for (const g of data.faceGroups) faceById.set(g.faceId, true);
-  const edgeById = new Map<number, true>();
-  if (data.edgeGroups) for (const g of data.edgeGroups) edgeById.set(g.edgeId, true);
-
-  const faceIds: number[] = [];
-  const edgeIds: number[] = [];
-  for (const sel of selections) {
-    if (sel.kind === 'face' && faceById.has(sel.info.faceId)) {
-      faceIds.push(sel.info.faceId);
-    } else if (sel.kind === 'edge' && edgeById.has(sel.info.edgeId)) {
-      edgeIds.push(sel.info.edgeId);
-    }
-  }
-  return { faceIds, edgeIds };
-}
 
 function buildFaceHighlightGeometry(
   data: MeshData,
@@ -101,56 +75,58 @@ function buildEdgeHighlightGeometry(
   return geo;
 }
 
-export default function SelectionHighlight({ data, selections, hoverEntity }: Props) {
+export default function SelectionHighlight({
+  data,
+  selectedFaceIds = [],
+  selectedEdgeIds = [],
+  hoverFaceId = null,
+  hoverEdgeId = null,
+}: SelectionHighlightProps) {
   // Stable cache keys: ids only, so unrelated selection drift (e.g. screenPos
   // updates from re-clicking the same face) doesn't rebuild geometry.
-  const { faceIds, edgeIds } = useMemo(() => partitionIds(data, selections), [data, selections]);
+  const selectedFaceKey = selectedFaceIds.join(',');
+  const selectedEdgeKey = selectedEdgeIds.join(',');
+  const faceIds = useMemo(
+    () => selectedFaceIds.filter((id) => data.faceGroups?.some((g) => g.faceId === id)),
+    [data, selectedFaceKey]
+  );
+  const edgeIds = useMemo(
+    () => selectedEdgeIds.filter((id) => data.edgeGroups?.some((g) => g.edgeId === id)),
+    [data, selectedEdgeKey]
+  );
   const faceKey = faceIds.join(',');
   const edgeKey = edgeIds.join(',');
 
-  const faceGeometry = useMemo(
-    () => buildFaceHighlightGeometry(data, faceIds),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- faceIds is captured via faceKey
-    [data, faceKey]
-  );
-  const edgeGeometry = useMemo(
-    () => buildEdgeHighlightGeometry(data, edgeIds),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- edgeIds is captured via edgeKey
-    [data, edgeKey]
-  );
+  const faceGeometry = useMemo(() => buildFaceHighlightGeometry(data, faceIds), [data, faceKey]);
+  const edgeGeometry = useMemo(() => buildEdgeHighlightGeometry(data, edgeIds), [data, edgeKey]);
 
-  // Hover overlay derives only from `hoverEntity` and the mesh's own group
-  // tables — NOT from `faceIds`/`edgeIds`. Including the selection-derived
-  // arrays here would re-run hover memoization on every click/deselect even
-  // when the hover target is unchanged. The `selections.includes` check
-  // moves down to the render-time gate (`shouldRenderHoverFace`) instead.
-  const hoverFaceId = useMemo(() => {
-    if (!hoverEntity || hoverEntity.kind !== 'face') return null;
-    const id = hoverEntity.info.faceId;
-    if (!data.faceGroups?.some((g) => g.faceId === id)) return null;
-    return id;
-  }, [hoverEntity, data.faceGroups]);
-  const hoverEdgeId = useMemo(() => {
-    if (!hoverEntity || hoverEntity.kind !== 'edge') return null;
-    const id = hoverEntity.info.edgeId;
-    if (!data.edgeGroups?.some((g) => g.edgeId === id)) return null;
-    return id;
-  }, [hoverEntity, data.edgeGroups]);
+  const resolvedHoverFaceId = useMemo(() => {
+    if (hoverFaceId === null) return null;
+    if (!data.faceGroups?.some((g) => g.faceId === hoverFaceId)) return null;
+    return hoverFaceId;
+  }, [hoverFaceId, data.faceGroups]);
+  const resolvedHoverEdgeId = useMemo(() => {
+    if (hoverEdgeId === null) return null;
+    if (!data.edgeGroups?.some((g) => g.edgeId === hoverEdgeId)) return null;
+    return hoverEdgeId;
+  }, [hoverEdgeId, data.edgeGroups]);
 
   const hoverFaceGeometry = useMemo(
-    () => (hoverFaceId !== null ? buildFaceHighlightGeometry(data, [hoverFaceId]) : null),
-    [data, hoverFaceId]
+    () => (resolvedHoverFaceId !== null ? buildFaceHighlightGeometry(data, [resolvedHoverFaceId]) : null),
+    [data, resolvedHoverFaceId]
   );
   const hoverEdgeGeometry = useMemo(
-    () => (hoverEdgeId !== null ? buildEdgeHighlightGeometry(data, [hoverEdgeId]) : null),
-    [data, hoverEdgeId]
+    () => (resolvedHoverEdgeId !== null ? buildEdgeHighlightGeometry(data, [resolvedHoverEdgeId]) : null),
+    [data, resolvedHoverEdgeId]
   );
 
   // Skip rendering the hover overlay when the hovered entity is already in
   // selections — the committed overlay covers the same triangles, and two
   // transparent quads at the same poly-offset would just produce flicker.
-  const shouldRenderHoverFace = hoverFaceId !== null && !faceIds.includes(hoverFaceId);
-  const shouldRenderHoverEdge = hoverEdgeId !== null && !edgeIds.includes(hoverEdgeId);
+  const shouldRenderHoverFace =
+    resolvedHoverFaceId !== null && !faceIds.includes(resolvedHoverFaceId);
+  const shouldRenderHoverEdge =
+    resolvedHoverEdgeId !== null && !edgeIds.includes(resolvedHoverEdgeId);
 
   useEffect(() => {
     return () => {
