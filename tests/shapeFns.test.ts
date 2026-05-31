@@ -20,14 +20,23 @@ import {
   getEdges,
   getFaces,
   getWires,
+  getSolids,
+  getShells,
+  getCompSolids,
   iterEdges,
   iterFaces,
   iterWires,
+  iterSolids,
+  iterShells,
+  iterCompSolids,
   getBounds,
   vertexPosition,
+  compound,
   isEdge,
   isFace,
   isSolid,
+  isShell,
+  isCompound,
   isWire,
   unwrap,
 } from '@/index.js';
@@ -144,6 +153,51 @@ describe('getEdges / getFaces / getWires', () => {
     const b = box(10, 10, 10);
     const wires = getWires(b);
     expect(wires.length).toBeGreaterThan(0);
+  });
+});
+
+describe('getSolids / getShells / getCompSolids', () => {
+  it('gets the lone solid from a box', () => {
+    const solids = getSolids(box(10, 10, 10));
+    expect(solids.length).toBe(1);
+    expect(isSolid(solids[0]!)).toBe(true); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+  });
+
+  it('unwraps both solids from a compound of two disjoint boxes', () => {
+    const c = compound([box(5, 5, 5), translate(box(5, 5, 5), [20, 0, 0])]);
+    expect(isCompound(c)).toBe(true);
+    const solids = getSolids(c);
+    expect(solids.length).toBe(2);
+    expect(solids.every((s) => isSolid(s))).toBe(true);
+  });
+
+  it('returns an empty array for a shape with no solids', () => {
+    const edges = getEdges(box(10, 10, 10));
+    expect(getSolids(edges[0]!)).toEqual([]); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+  });
+
+  it('caches results per shape (same array reference)', () => {
+    const b = box(10, 10, 10);
+    expect(getSolids(b)).toBe(getSolids(b));
+  });
+
+  it('gets a shell from a box', () => {
+    const shells = getShells(box(10, 10, 10));
+    expect(shells.length).toBe(1);
+    expect(isShell(shells[0]!)).toBe(true); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+  });
+
+  it('returns an empty array of compsolids for a box (no compsolids)', () => {
+    expect(getCompSolids(box(10, 10, 10))).toEqual([]);
+  });
+
+  it('iterators yield the same results as their getters', () => {
+    const b = box(10, 10, 10);
+    expect([...iterSolids(b)].length).toBe(getSolids(b).length); // 1
+    expect([...iterShells(b)].length).toBe(getShells(b).length); // 1
+    expect([...iterCompSolids(b)]).toEqual(getCompSolids(b)); // []
+    expect([...iterSolids(b)].every((s) => isSolid(s))).toBe(true);
+    expect([...iterShells(b)].every((s) => isShell(s))).toBe(true);
   });
 });
 
