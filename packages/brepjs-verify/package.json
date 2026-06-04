@@ -34,12 +34,13 @@
   "files": [
     "dist",
     "viewer/dist",
+    "reference",
     "CHANGELOG.md",
     "LICENSE",
     "README.md"
   ],
   "scripts": {
-    "build": "vite build && vite build --config viewer/vite.config.ts",
+    "build": "node scripts/copyReference.mjs && vite build && vite build --config viewer/vite.config.ts",
     "typecheck": "tsc --noEmit && tsc -p viewer/tsconfig.json --noEmit && tsc -p bench/tsconfig.json",
     "lint": "eslint src tests viewer bench",
     "test": "vitest run",
@@ -50,6 +51,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
+    "@types/node": "^25.9.1",
     "brepjs": "^18.0.0",
     "commander": "^13.0.0",
     "occt-wasm": "^3.0.0",

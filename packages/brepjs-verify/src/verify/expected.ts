@@ -20,6 +20,15 @@ export interface ExpectedDims {
 
 export const DEFAULT_TOLERANCE_PCT = 0.5;
 
+/**
+ * Absolute slack (mm / mm² / mm³) below which a deviation always passes, independent of
+ * percent tolerance. Kernel coordinates carry sub-nanometer float noise (e.g. a loft base
+ * lands at z = -1e-7, not 0), so a percent comparison against an expected `0` — where any
+ * nonzero deviation is infinite percent — would make a zero-valued bound or measurement
+ * impossible to assert. 1e-6 is far above that noise and far below any real feature size.
+ */
+export const ABS_EPSILON = 1e-6;
+
 /** Percent deviation of `actual` from `expected`; 0 expected matches only 0 actual. */
 export function pctDelta(actual: number, expected: number): number {
   if (expected === 0) return actual === 0 ? 0 : Infinity;
@@ -27,7 +36,29 @@ export function pctDelta(actual: number, expected: number): number {
 }
 
 function withinTolerance(actual: number, expected: number, tolerancePct: number): boolean {
+  // Absolute-epsilon escape hatch first, so a near-zero expectation (the percent metric's
+  // blind spot) still passes against noisy-but-correct kernel output.
+  if (Math.abs(actual - expected) <= ABS_EPSILON) return true;
   return pctDelta(actual, expected) <= tolerancePct;
+}
+
+const TOP_LEVEL_KEYS = new Set(['volume', 'area', 'bounds', 'tolerancePct']);
+const BOUND_KEYS = new Set(['xMin', 'xMax', 'yMin', 'yMax', 'zMin', 'zMax']);
+
+/**
+ * Keys in an `expected` block that the CLI does not understand and would silently ignore — a
+ * `{ min: [...], max: [...] }` or `{ x: [...] }` bounds shape, or a misspelled top-level field.
+ * Surfaced as an error (not dropped) so a wrong `expected` shape fails loud instead of passing
+ * vacuously with the intended assertion never run.
+ */
+export function unknownExpectedKeys(expected: object): string[] {
+  const bad: string[] = [];
+  for (const k of Object.keys(expected)) if (!TOP_LEVEL_KEYS.has(k)) bad.push(k);
+  const bounds = (expected as { bounds?: unknown }).bounds;
+  if (bounds && typeof bounds === 'object') {
+    for (const k of Object.keys(bounds)) if (!BOUND_KEYS.has(k)) bad.push(`bounds.${k}`);
+  }
+  return bad;
 }
 
 export function isExpectedDims(v: unknown): v is ExpectedDims {

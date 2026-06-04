@@ -192,6 +192,16 @@ const HINT_TABLE: Record<string, { fix: string; nextStep: string }> = {
     fix: 'The boolean subtraction failed — often a tool that does not actually intersect the base, or tolerance issues.',
     nextStep: 'Confirm the tool overlaps the base, optionally heal the inputs, then re-cut.',
   },
+  FILLET_FAILED: {
+    fix: 'The fillet could not be built — usually the radius is too large for an edge it touched (it cannot exceed the adjacent face/wall), or you filleted EVERY edge (the no-edge-list form) including ones too thin to round.',
+    nextStep:
+      'Select only the edges you mean to round — e.g. edgeFinder().inDirection("Z").findAll(solid) — and/or reduce the radius below the thinnest adjacent wall, then re-verify.',
+  },
+  CHAMFER_FAILED: {
+    fix: 'The chamfer could not be built — usually the distance is too large for an edge it touched, or you chamfered EVERY edge (the no-edge-list form) including ones too thin.',
+    nextStep:
+      'Select only the target edges with an edge finder and/or reduce the distance below the shortest adjacent edge, then re-verify.',
+  },
   BOOLEAN_HAS_ERRORS: {
     fix: 'The boolean ran but the kernel reported errors (often coincident faces or near-tangent contact).',
     nextStep:
@@ -230,6 +240,11 @@ const HINT_TABLE: Record<string, { fix: string; nextStep: string }> = {
   TYPECHECK: {
     fix: 'Fix the TypeScript type error before running the part — the API call or value does not match brepjs’s types.',
     nextStep: 'Correct the flagged type (e.g. argument/return type or import), then re-verify.',
+  },
+  EXPECTED_UNKNOWN_KEY: {
+    fix: 'Your `expected` block has keys the CLI does not assert (so the intended check never ran). Bounds must be `{ xMin, xMax, yMin, yMax, zMin, zMax }` — not `{ min, max }` or `{ x, y, z }`.',
+    nextStep:
+      'Rewrite `expected` using only volume, area, tolerancePct, and bounds.{xMin..zMax}, then re-verify.',
   },
 };
 

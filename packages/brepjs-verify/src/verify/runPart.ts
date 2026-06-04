@@ -2,7 +2,12 @@ import type { AnyShape, BrepError, Result } from 'brepjs';
 import { pathToFileURL } from 'node:url';
 import { loadBrep, initOcctWasm, toolDir } from './brepjsRuntime.js';
 import { runChecks } from './checks.js';
-import { evaluateExpected, isExpectedDims, type ExpectedDims } from './expected.js';
+import {
+  evaluateExpected,
+  isExpectedDims,
+  unknownExpectedKeys,
+  type ExpectedDims,
+} from './expected.js';
 import { typecheckPart } from './typecheck.js';
 import { buildHints, emptyReport, pushError, type ErrorInfo, type VerifyReport } from './report.js';
 
@@ -48,7 +53,16 @@ function toErrorInfo(prefix: string, e: unknown): ErrorInfo {
     return { message: `${prefix}: ${e.message}`, code: e.code, suggestion: e.suggestion };
   }
   if (e instanceof Error) {
-    return { message: `${prefix}: ${e.message}` };
+    // brepjs throws on a bare `unwrap()` of an Err with a message shaped like
+    // "Called unwrap() on an Err: [KIND] CODE: detail". Authors are told to unwrap, so
+    // the structured BrepError code arrives flattened into this string — recover it so the
+    // hint table still fires (otherwise a known failure like FILLET_FAILED produces no hint).
+    // Anchor on the literal `[KIND] CODE:` shape so a stray `]…:` elsewhere can't be mistaken
+    // for the code.
+    const code = e.message.match(/\[[A-Z][A-Z0-9_]*\]\s+([A-Z][A-Z0-9_]+):/)?.[1];
+    return code
+      ? { message: `${prefix}: ${e.message}`, code }
+      : { message: `${prefix}: ${e.message}` };
   }
   return { message: `${prefix}: ${String(e)}` };
 }
@@ -146,6 +160,15 @@ export async function runPart(
   if (isExpectedDims(mod.expected)) {
     const expected: ExpectedDims = mod.expected;
     result.assertions = evaluateExpected(expected, result.measurements);
+    // A wrong `expected` shape (e.g. bounds as { min, max } or { x } instead of
+    // { xMin, xMax, … }) would otherwise be ignored, vacuously passing. Fail loud.
+    const unknown = unknownExpectedKeys(expected);
+    if (unknown.length > 0) {
+      pushError(result, {
+        message: `expected has unrecognized keys (ignored): ${unknown.join(', ')}. Valid keys: volume, area, tolerancePct, bounds.{xMin,xMax,yMin,yMax,zMin,zMax}.`,
+        code: 'EXPECTED_UNKNOWN_KEY',
+      });
+    }
   }
   let glb: ArrayBuffer | undefined;
   let step: ArrayBuffer | undefined;

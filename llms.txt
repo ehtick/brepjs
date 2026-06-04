@@ -131,7 +131,7 @@ Layered on top of base types to encode topological invariants at compile time:
 - `ManifoldShell` — shell proven to be watertight.
 - `ValidSolid` — solid passing BRepCheck validation. Returned by `box()`, `cylinder()`, etc.
 
-Smart constructors prove validity at runtime: `closedWire(w)`, `orientedFace(f)`, `manifoldShell(s)`, `validSolid(s)` → `ValidityResult<T>`.
+Smart constructors prove validity at runtime: `closedWire(w)`, `orientedFace(f)`, `manifoldShell(s)`, `validSolid(s)` → `Result<T, string>` (check with `isOk`, extract with `unwrap` — there is no `.valid`/`.value` field).
 Type guards narrow in-place: `isClosedWire(w)`, `isOrientedFace(f)`, `isManifoldShell(s)`, `isValidSolid(s)`.
 Convenience: `wireLoop(edges)` assembles edges and verifies closure → `Result<ClosedWire>`.
 
@@ -333,7 +333,7 @@ const halfTorus = sketchCircle(2, { plane: 'XZ' }).revolve([10, 0, 0], { origin:
 
 Functional API:
 - `extrude(face: OrientedFace, height: number | Vec3): Result<Solid>` — Extrude a face. Pass a number for Z-axis extrusion or a Vec3 for arbitrary direction (vector length = distance)
-- `revolve(face: OrientedFace, { axis?, at?, angle? }?): Result<Shape3D>` — Revolve a face. `at` default `[0,0,0]`, `axis` default `[0,0,1]` (Z), `angle` default `360` degrees
+- `revolve(face: OrientedFace, { axis?, at?, angle? }?): Result<Shape3D>` — Revolve a face. `at` default `[0,0,0]`, `axis` default `[0,0,1]` (Z). **`angle` is in RADIANS** — a full turn is `Math.PI * 2`; if omitted it defaults to a HALF turn (`Math.PI`), so always pass it explicitly. (Note: pattern `fullAngle` is in degrees — brepjs is not uniform, so don't assume degrees here.)
 - `sweep(wire, spine, config?, shellMode?): Result<Shape3D | [Shape3D, Wire, Wire]>` — Sweep profile along spine
 - `complexExtrude(wire, center, normal, profileShape?, shellMode?): Result<Shape3D>` — Extrude with scaling profile
 - `twistExtrude(wire, angleDeg, center, normal, profileShape?, shellMode?): Result<Shape3D>` — Twist extrude with rotation
@@ -1490,8 +1490,8 @@ getShapeKind(shape): ShapeKind          // 'vertex' | 'edge' | ... | 'compound'
 isVertex(s): s is Vertex                // Type guards for shape kinds
 is3D(s): s is AnyShape<'3D'>           // Dimension guards
 is2D(s): s is AnyShape<'2D'>
-closedWire(w): ValidityResult<ClosedWire>     // Validity smart constructors
-orientedFace(f): ValidityResult<OrientedFace>
+closedWire(w): Result<ClosedWire, string>     // Validity smart constructors
+orientedFace(f): Result<OrientedFace, string>
 isClosedWire(w): w is ClosedWire              // Validity type guards
 isOrientedFace(f): f is OrientedFace
 isManifoldShell(s): s is ManifoldShell
