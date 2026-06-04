@@ -1,0 +1,78 @@
+{
+  "name": "brepjs-verify",
+  "version": "0.2.1",
+  "description": "Agent skill + verify/preview tooling for authoring parametric brepjs CAD code",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andymai/brepjs",
+    "directory": "packages/brepjs-verify"
+  },
+  "main": "./dist/brepjs-verify.cjs",
+  "module": "./dist/brepjs-verify.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/brepjs-verify.js"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/brepjs-verify.cjs"
+      }
+    }
+  },
+  "bin": {
+    "brepjs-verify": "./dist/cli/main.js"
+  },
+  "files": [
+    "dist",
+    "viewer/dist",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "vite build && vite build --config viewer/vite.config.ts",
+    "typecheck": "tsc --noEmit && tsc -p viewer/tsconfig.json --noEmit && tsc -p bench/tsconfig.json",
+    "lint": "eslint src tests viewer bench",
+    "test": "vitest run",
+    "eval": "tsx bench/run.ts",
+    "smoke": "node dist/cli/main.js verify tests/fixtures/validBox.brep.ts | node -e \"const r=JSON.parse(require('fs').readFileSync(0,'utf8'));if(r.ok!==true||!(r.measurements.volume>0))process.exit(1)\"",
+    "smoke:standalone": "node scripts/smokeStandalone.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "brepjs": "^18.0.0",
+    "commander": "^13.0.0",
+    "occt-wasm": "^3.0.0",
+    "typescript": "^6.0.3"
+  },
+  "optionalDependencies": {
+    "puppeteer": "^25.0.4"
+  },
+  "devDependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "@types/node": "^25.9.1",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.184.1",
+    "@vitejs/plugin-react": "^6.0.2",
+    "brepjs-viewer": "^0.1.0",
+    "eslint": "^10.4.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "three": "^0.184.0",
+    "tsx": "^4.22.3",
+    "vite": "^8.0.0",
+    "vite-plugin-dts": "^5.0.1",
+    "vitest": "^4.0.0"
+  }
+}
