@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { writeFileSync, watch as fsWatch } from 'node:fs';
+import { writeFileSync, watch as fsWatch, realpathSync } from 'node:fs';
 import { resolve, join, basename, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { runPart } from '../verify/runPart.js';
-import { serializeReport } from '../verify/report.js';
+import { pushError, reportOk, serializeReport } from '../verify/report.js';
 import { runMeasure } from '../verify/measure.js';
 import { runDiff } from '../verify/diff.js';
 import { scaffoldPart } from './scaffold.js';
@@ -52,31 +52,43 @@ program
       // The WASM viewer loads a CAD file (it can't run a .brep.ts), so --snapshot/--serve
       // stage the primary STEP and point the viewer at it via ?dir=&file=. --glb is its own artifact.
       const wantStep = Boolean(opts.step) || Boolean(opts.snapshot) || Boolean(opts.serve);
-      const { report, step, glb } = await runPart(resolve(file), {
+      const { report, step, glb, shape } = await runPart(resolve(file), {
         step: wantStep,
         glb: Boolean(opts.glb),
       });
+      let stepPath: string | undefined = opts.step;
+      try {
+        if (opts.glb && glb) writeFileSync(opts.glb, Buffer.from(glb));
+
+        if (wantStep && step) {
+          stepPath = opts.step ?? join(tmpdir(), `brepjs-cad-${basename(file)}.step`);
+          writeFileSync(stepPath, Buffer.from(step));
+        }
+        if (opts.snapshot && stepPath) {
+          const shoot = await loadSnapshotShoot(); // lazy: keeps puppeteer off the default path
+          if (shoot) {
+            const { pngs } = await shoot({ file: stepPath, outDir: opts.snapshot });
+            // Diagnostic paths go to stderr — stdout stays a single clean JSON document.
+            for (const p of pngs) process.stderr.write(`snapshot: ${p}\n`);
+          }
+        } else if (opts.snapshot) {
+          process.stderr.write('snapshot skipped: STEP export produced no artifact\n');
+        }
+      } catch (e) {
+        pushError(report, { message: `artifact write failed: ${(e as Error).message}` });
+      } finally {
+        // The shape is a live WASM handle; release it before the server takes over (the
+        // --serve path stays running, so leaking here would persist for the server's lifetime).
+        disposeShape(shape);
+      }
+      // Serialize once after all artifact writes so the --json file and stdout
+      // reflect the same report (incl. any "artifact write failed" error).
       const json = serializeReport(report);
       if (opts.json) writeFileSync(opts.json, json);
-      if (opts.glb && glb) writeFileSync(opts.glb, Buffer.from(glb));
-
-      let stepPath: string | undefined = opts.step;
-      if (wantStep && step) {
-        stepPath = opts.step ?? join(tmpdir(), `brepjs-cad-${basename(file)}.step`);
-        writeFileSync(stepPath, Buffer.from(step));
-      }
-      if (opts.snapshot && stepPath) {
-        const shoot = await loadSnapshotShoot(); // lazy: keeps puppeteer off the default path
-        if (shoot) {
-          const { pngs } = await shoot({ file: stepPath, outDir: opts.snapshot });
-          // Diagnostic paths go to stderr — stdout stays a single clean JSON document.
-          for (const p of pngs) process.stderr.write(`snapshot: ${p}\n`);
-        }
-      }
       process.stdout.write(json + '\n');
-      const parsed = JSON.parse(json) as { ok: boolean };
-      if (!opts.serve && parsed.ok !== true) process.exitCode = 1;
-      if (opts.serve && stepPath) {
+      if (!reportOk(report)) process.exitCode = 1;
+      const willServe = Boolean(opts.serve) && stepPath !== undefined && reportOk(report);
+      if (willServe && stepPath) {
         const { serve } = await import('../snapshot/serve.js'); // lazy: no server deps on the default path
         const { url } = await serve({ file: stepPath }); // builds a ?dir=&file= URL; server runs until Ctrl-C
         process.stderr.write(`viewer: ${url}\n`);
@@ -189,6 +201,17 @@ program
 
 // Only drive the CLI when run as the entry script, so tests can import the
 // guarded loaders without commander parsing the test runner's argv.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Resolve symlinks on both sides: the npm-installed bin (node_modules/.bin/brepjs)
+// is a symlink, so process.argv[1] would otherwise never equal the real module path.
+export function isEntrypoint(argv1: string | undefined, moduleUrl: string): boolean {
+  if (!argv1) return false;
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntrypoint(process.argv[1], import.meta.url)) {
   void program.parseAsync();
 }
