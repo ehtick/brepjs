@@ -4,6 +4,8 @@ import type { KernelShape, ShapeOrientation, ShapeType } from '@/kernel/types.js
 import type { ManifoldModule } from './helpers.js';
 import { asManifoldShape, brepCache, occtOrThrow, resolveOcct, unwrap } from './meshHandle.js';
 import { replay } from './replay.js';
+import { extractFaces } from './nativeFaces.js';
+import { extractEdges, extractVertices } from './nativeEdges.js';
 
 function brepOf(shape: KernelShape, method: string): { occt: KernelAdapter; brep: KernelShape } {
   const ms = asManifoldShape(shape);
@@ -64,10 +66,56 @@ function iterShapes(shape: KernelShape, type: ShapeType): KernelShape[] {
   const s = asManifoldShape(shape);
   if (!s) return [];
   if (type === 'solid') return [shape];
+  // Native B-rep vertices: mesh corners where ≥3 faces meet, no OCCT replay.
+  if (type === 'vertex') {
+    const solid = unwrap(s);
+    if (solid && typeof solid.getMesh === 'function') {
+      return extractVertices(solid.getMesh()).map((v, index) => ({
+        ...v,
+        __manifoldSub: true,
+        index,
+        box: { min: v.point, max: v.point },
+        parent: s.node,
+        subType: 'vertex' as const,
+      }));
+    }
+    return [];
+  }
   if (type !== 'edge' && type !== 'face') return [];
-  // Manifold has no B-rep edges/faces; replay to OCCT, then expose each
-  // sub-shape as a witness handle carrying its OCCT bounding box. Subset
-  // fillet/chamfer/shell selection re-identifies these by box center on replay.
+  // Native fast path for faces: group the manifold mesh by faceID — real planar
+  // faces with normal/center/area/provenance, NO OCCT replay. This is the
+  // faceFinder unlock (shell/scoops) that previously forced a full op-graph
+  // rebuild onto OCCT per query.
+  if (type === 'face') {
+    const solid = unwrap(s);
+    if (solid && typeof solid.getMesh === 'function') {
+      return extractFaces(solid.getMesh()).map((f, index) => ({
+        ...f,
+        __manifoldSub: true,
+        index,
+        box: { min: f.min, max: f.max },
+        parent: s.node,
+        subType: 'face' as const,
+      }));
+    }
+  }
+  // Native fast path for edges: face-pair boundaries from the mesh — real edges
+  // with tangent/length/provenance, NO OCCT replay (edgeFinder for lip fillets).
+  if (type === 'edge') {
+    const solid = unwrap(s);
+    if (solid && typeof solid.getMesh === 'function') {
+      return extractEdges(solid.getMesh()).map((e, index) => ({
+        ...e,
+        __manifoldSub: true,
+        index,
+        box: { min: e.min, max: e.max },
+        parent: s.node,
+        subType: 'edge' as const,
+      }));
+    }
+  }
+  // Faces/edges without a mesh fall back to the OCCT replay: expose each
+  // sub-shape as a witness carrying its OCCT shape + bounding box.
   if (!s.node.replayable) return [];
   const occt = resolveOcct();
   if (!occt) return [];
@@ -78,10 +126,16 @@ function iterShapes(shape: KernelShape, type: ShapeType): KernelShape[] {
       brepCache.set(s.node, b);
       return b;
     })();
+  // Witnesses carry the OCCT sub-shape directly (so geometry/topology queries
+  // delegate straight to OCCT) plus the box + parent node for selection
+  // re-identification on a later replay. This is what unblocks faceFinder.
   return occt.iterShapes(brep, type).map((sub, index) => ({
     __manifoldSub: true,
     index,
     box: occt.boundingBox(sub),
+    occt: sub,
+    parent: s.node,
+    subType: type,
   }));
 }
 

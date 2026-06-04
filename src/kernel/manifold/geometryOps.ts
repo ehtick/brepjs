@@ -19,6 +19,8 @@ import type { KernelShape } from '@/kernel/types.js';
 import type { ManifoldModule } from './helpers.js';
 import { asManifoldShape, brepCache, occtOrThrow, resolveOcct, unwrap } from './meshHandle.js';
 import { replay } from './replay.js';
+import { isNativeFace } from './nativeFaces.js';
+import { isNativeEdge, isNativeVertex, edgePointAt, edgeTangentAt } from './nativeEdges.js';
 
 type Vec3 = [number, number, number];
 
@@ -46,6 +48,16 @@ function viaOcct<T>(
   shape: KernelShape,
   query: (occtShape: KernelShape, occt: KernelAdapter) => T
 ): T {
+  // Sub-shape witnesses (from iterShapes) carry their OCCT shape directly —
+  // query it on OCCT so faceFinder/topology queries work on extrude/loft faces.
+  const witness = shape as { __manifoldSub?: boolean; occt?: KernelShape } | null;
+  if (witness && witness.__manifoldSub && witness.occt) {
+    const occt = resolveOcct();
+    if (!occt) {
+      throw new Error('manifold: sub-shape geometry query requires a registered occt kernel');
+    }
+    return query(witness.occt, occt);
+  }
   const ms = asManifoldShape(shape);
   if (!ms) {
     throw new Error('manifold: exact geometry query requires a manifold shape handle');
@@ -71,12 +83,21 @@ function viaOcct<T>(
 
 export function makeGeometryOps(_module: ManifoldModule): KernelCurveOps & KernelSurfaceOps {
   return {
-    // --- Exact curve queries: replay onto OCCT ---
-    curveType: (shape) => viaOcct(shape, (s, occt) => occt.curveType(s)),
-    curveParameters: (shape) => viaOcct(shape, (s, occt) => occt.curveParameters(s)),
+    // --- Curve queries: native for mesh-extracted edges, else replay onto OCCT ---
+    curveType: (shape) =>
+      isNativeEdge(shape) ? shape.curveType : viaOcct(shape, (s, occt) => occt.curveType(s)),
+    curveParameters: (shape) =>
+      isNativeEdge(shape)
+        ? [0, shape.length]
+        : viaOcct(shape, (s, occt) => occt.curveParameters(s)),
     curvePointAtParam: (shape, param) =>
-      viaOcct(shape, (s, occt) => occt.curvePointAtParam(s, param)),
-    curveTangent: (shape, param) => viaOcct(shape, (s, occt) => occt.curveTangent(s, param)),
+      isNativeEdge(shape)
+        ? edgePointAt(shape, param)
+        : viaOcct(shape, (s, occt) => occt.curvePointAtParam(s, param)),
+    curveTangent: (shape, param) =>
+      isNativeEdge(shape)
+        ? { point: edgePointAt(shape, param), tangent: edgeTangentAt(shape, param) }
+        : viaOcct(shape, (s, occt) => occt.curveTangent(s, param)),
     curveIsClosed: (shape) => viaOcct(shape, (s, occt) => occt.curveIsClosed(s)),
     curveIsPeriodic: (shape) => viaOcct(shape, (s, occt) => occt.curveIsPeriodic(s)),
     curvePeriod: (shape) => viaOcct(shape, (s, occt) => occt.curvePeriod(s)),
@@ -98,6 +119,7 @@ export function makeGeometryOps(_module: ManifoldModule): KernelCurveOps & Kerne
 
     // --- Cheap mesh-derivable query ---
     vertexPosition: (vertex) => {
+      if (isNativeVertex(vertex)) return vertex.point;
       if (!asManifoldShape(vertex)) {
         return viaOcct(vertex, (s, occt) => occt.vertexPosition(s));
       }
@@ -105,10 +127,24 @@ export function makeGeometryOps(_module: ManifoldModule): KernelCurveOps & Kerne
     },
 
     // --- Exact surface queries: replay onto OCCT ---
-    surfaceType: (face) => viaOcct(face, (s, occt) => occt.surfaceType(s)),
-    uvBounds: (face) => viaOcct(face, (s, occt) => occt.uvBounds(s)),
+    surfaceType: (face) => {
+      // Native mesh faces (faceID groups) are planar; profile faces built by
+      // profileOps are planar by construction. Answer 'plane' natively so
+      // faceFinder.ofSurfaceType / isPlanarFace work without an OCCT replay.
+      if (isNativeFace(face)) return 'plane';
+      const ms = asManifoldShape(face);
+      if (ms && (ms.node as { op?: string }).op === 'profileFace') return 'plane';
+      return viaOcct(face, (s, occt) => occt.surfaceType(s));
+    },
+    // A native planar face has constant normal; uv is irrelevant. Return a unit
+    // square so normalAt()'s midpoint sampling stays well-defined.
+    uvBounds: (face) =>
+      isNativeFace(face)
+        ? { uMin: 0, uMax: 1, vMin: 0, vMax: 1 }
+        : viaOcct(face, (s, occt) => occt.uvBounds(s)),
     outerWire: (face) => viaOcct(face, (s, occt) => occt.outerWire(s)),
-    surfaceNormal: (face, u, v) => viaOcct(face, (s, occt) => occt.surfaceNormal(s, u, v)),
+    surfaceNormal: (face, u, v) =>
+      isNativeFace(face) ? face.normal : viaOcct(face, (s, occt) => occt.surfaceNormal(s, u, v)),
     pointOnSurface: (face, u, v) => viaOcct(face, (s, occt) => occt.pointOnSurface(s, u, v)),
     uvFromPoint: (face, point) => viaOcct(face, (s, occt) => occt.uvFromPoint(s, point)),
     projectPointOnFace: (face, point) =>
