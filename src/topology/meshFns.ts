@@ -3,6 +3,7 @@
  */
 
 import { getKernel } from '@/kernel/index.js';
+import { qualityDeflection } from '@/kernel/quality.js';
 import type { AnyShape, Dimension } from '@/core/shapeTypes.js';
 import { type Result, ok, err } from '@/core/result.js';
 import { ioError, type BrepError } from '@/core/errors.js';
@@ -46,9 +47,9 @@ export interface EdgeMesh {
 
 /** Shared options for meshing operations. */
 export interface MeshOptions {
-  /** Linear deflection tolerance (default 1e-3). Smaller = finer mesh. */
+  /** Linear deflection tolerance. Smaller = finer mesh. Defaults to the active quality level. */
   tolerance?: number;
-  /** Angular deflection tolerance in radians (default 0.1). Smaller = finer mesh on curved surfaces. */
+  /** Angular deflection tolerance in radians. Smaller = finer mesh on curved surfaces. Defaults to the active quality level. */
   angularTolerance?: number;
   /** Abort signal to cancel mesh generation between face iterations. */
   signal?: AbortSignal;
@@ -69,15 +70,19 @@ export interface MeshOptions {
  */
 export function mesh(
   shape: AnyShape<Dimension>,
-  {
-    tolerance = 1e-3,
-    angularTolerance = 0.1,
+  opts: MeshOptions & { skipNormals?: boolean; includeUVs?: boolean; cache?: boolean } = {}
+): ShapeMesh {
+  // Unspecified deflection defaults to the active quality level (see
+  // withQuality / withTier). 'standard' reproduces the historical 1e-3 / 0.1.
+  const quality = qualityDeflection();
+  const {
+    tolerance = quality.tolerance,
+    angularTolerance = quality.angularTolerance,
     skipNormals = false,
     includeUVs = false,
     cache = true,
     signal,
-  }: MeshOptions & { skipNormals?: boolean; includeUVs?: boolean; cache?: boolean } = {}
-): ShapeMesh {
+  } = opts;
   signal?.throwIfAborted();
   // Check cache first (uses WeakMap keyed by shape object to avoid hash collisions)
   const cacheKey = buildMeshCacheKey(tolerance, angularTolerance, skipNormals, includeUVs);
@@ -130,8 +135,15 @@ export function mesh(
  */
 export function meshEdges(
   shape: AnyShape<Dimension>,
-  { tolerance = 1e-3, angularTolerance = 0.1, cache = true }: MeshOptions & { cache?: boolean } = {}
+  opts: MeshOptions & { cache?: boolean } = {}
 ): EdgeMesh {
+  // Default deflection follows the active quality level (see mesh()).
+  const quality = qualityDeflection();
+  const {
+    tolerance = quality.tolerance,
+    angularTolerance = quality.angularTolerance,
+    cache = true,
+  } = opts;
   // Check cache first (uses WeakMap keyed by shape object to avoid hash collisions)
   const cacheKey = buildEdgeMeshCacheKey(tolerance, angularTolerance);
   if (cache) {
@@ -271,12 +283,15 @@ export function exportSTEP(shape: AnyShape<Dimension>): Result<Blob> {
  */
 export function exportSTL(
   shape: AnyShape<Dimension>,
-  {
-    tolerance = 1e-3,
-    angularTolerance = 0.1,
-    binary = false,
-  }: MeshOptions & { binary?: boolean } = {}
+  opts: MeshOptions & { binary?: boolean } = {}
 ): Result<Blob> {
+  // Default deflection follows the active quality level (see mesh()).
+  const quality = qualityDeflection();
+  const {
+    tolerance = quality.tolerance,
+    angularTolerance = quality.angularTolerance,
+    binary = false,
+  } = opts;
   const unserializable = probeSerializable(shape, 'STL');
   if (unserializable) return err(unserializable);
   try {
