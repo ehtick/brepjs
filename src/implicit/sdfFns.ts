@@ -362,6 +362,58 @@ export function sweep(
   return build((e) => e.Sdf.sweep(flat.value, profile.value, closed), id);
 }
 
+/** TPMS family selector for {@link lattice}. */
+export type LatticeKind = 'gyroid' | 'schwarzP' | 'diamond';
+
+// Stable wasm-boundary encoding (matches `LatticeType::from_u32` in tpms.rs).
+const LATTICE_TAGS: Record<LatticeKind, number> = {
+  gyroid: 0,
+  schwarzP: 1,
+  diamond: 2,
+};
+
+/**
+ * A graded/conformal TPMS lattice: `|f(p)| − ½·thickness(p)` for the chosen `kind`
+ * (negative = strut material), with `period` and `thickness` GRADED per-position via
+ * {@link ScalarFieldHandle}. A {@link fieldConst} period/thickness reproduces a
+ * uniform lattice. The field is Lipschitz and APPROXIMATE (not a true SDF).
+ *
+ * The lattice is INFINITE/periodic, so it must be clipped to a bounded region
+ * (`lattice.intersection(region)`) before rasterizing — that conformal clip is what
+ * frames a finite grid. NOTE: grading the PERIOD is an approximation (a
+ * spatially-varying period isn't strictly periodic); grading THICKNESS is the
+ * well-behaved primary knob.
+ */
+export function lattice(
+  kind: LatticeKind,
+  period: ScalarFieldHandle,
+  thickness: ScalarFieldHandle,
+  id?: string
+): Result<SdfHandle> {
+  // An untyped caller can pass an unknown string; without this guard the missing
+  // tag would cross into wasm as 0 and silently build a Gyroid instead of erroring.
+  // The string-keyed view lets the runtime guard typecheck (the typed map can't).
+  const tag = (LATTICE_TAGS as Record<string, number | undefined>)[kind];
+  if (tag === undefined) {
+    return err(validationError('SDF_INVALID_LATTICE_KIND', `unknown lattice kind: ${kind}`));
+  }
+  return build((e) => e.Sdf.lattice(tag, period.value, thickness.value), id);
+}
+
+/**
+ * A cubic beam/strut lattice: axis-aligned cylindrical struts on a `period`-spaced
+ * cubic grid, with the strut `radius` GRADED per-position via
+ * {@link ScalarFieldHandle}. Periodic/infinite — clip to a bounded region
+ * (`strut.intersection(region)`) before rasterizing.
+ */
+export function strutLattice(
+  period: number,
+  radius: ScalarFieldHandle,
+  id?: string
+): Result<SdfHandle> {
+  return build((e) => e.Sdf.strut_lattice(period, radius.value), id);
+}
+
 /**
  * A disposable handle around a position-varying scalar field (brepjs-implicit Phase
  * 2b). Fed to the {@link SdfHandle} modulated operators (`offsetField`, `shellField`,
