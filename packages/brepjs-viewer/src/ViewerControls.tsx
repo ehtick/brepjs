@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode } from 'react';
-import { VIEW_NAMES, type ViewMode, type ViewName } from './types.js';
+import { VIEW_NAMES, type Projection, type ViewMode, type ViewName } from './types.js';
 
 // Fully controlled, store-agnostic toolbar. Each control group renders only when
 // its handler is supplied, so a consumer (the verify viewer, the playground) opts
@@ -14,6 +14,9 @@ export interface ViewerControlsProps {
   onToggleGrid?: () => void;
   autoRotate?: boolean;
   onToggleAutoRotate?: () => void;
+  /** When 'orthographic', the projection button reads "Ortho" and shows active. */
+  projection?: Projection;
+  onToggleProjection?: () => void;
   activeView?: ViewName | null;
   onView?: (view: ViewName) => void;
   onFit?: () => void;
@@ -42,6 +45,8 @@ export function ViewerControls({
   onToggleGrid,
   autoRotate,
   onToggleAutoRotate,
+  projection,
+  onToggleProjection,
   activeView,
   onView,
   onFit,
@@ -70,7 +75,7 @@ export function ViewerControls({
           ))}
         </Group>
       )}
-      {(onToggleEdges || onToggleGrid || onToggleAutoRotate) && (
+      {(onToggleEdges || onToggleGrid || onToggleAutoRotate || onToggleProjection) && (
         <Group>
           {onToggleEdges && (
             <Btn label="Edges" active={showEdges} onClick={onToggleEdges} />
@@ -78,6 +83,13 @@ export function ViewerControls({
           {onToggleGrid && <Btn label="Grid" active={showGrid} onClick={onToggleGrid} />}
           {onToggleAutoRotate && (
             <Btn label="Spin" active={autoRotate} onClick={onToggleAutoRotate} />
+          )}
+          {onToggleProjection && (
+            <Btn
+              label={projection === 'orthographic' ? 'Ortho' : 'Persp'}
+              active={projection === 'orthographic'}
+              onClick={onToggleProjection}
+            />
           )}
         </Group>
       )}
