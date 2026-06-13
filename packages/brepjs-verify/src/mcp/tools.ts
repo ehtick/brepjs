@@ -5,6 +5,7 @@
 
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { runProgram } from '../sandbox/runProgram.js';
+import { appendRunRecord, buildRunRecord } from '../sandbox/runRecord.js';
 
 export interface RunProgramToolArgs {
   /** A brepjs `.brep.ts` module source with a default-exported part function. */
@@ -45,6 +46,18 @@ export async function runProgramTool(args: RunProgramToolArgs): Promise<CallTool
     args.code,
     args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}
   );
+
+  // Optional provenance: when BREPJS_RUN_RECORD_PATH is set, append one JSONL record per run.
+  // Best-effort — a recording failure must never affect the tool result the agent sees.
+  const recordPath = process.env['BREPJS_RUN_RECORD_PATH'];
+  if (recordPath) {
+    // Fire-and-forget: provenance is a side channel and must never block (or fail) the agent
+    // response on disk I/O. A misconfigured path is surfaced on stderr (separate from the stdio
+    // JSON-RPC channel) without touching the tool result.
+    void appendRunRecord(recordPath, buildRunRecord(args.code, result)).catch((err: unknown) => {
+      console.warn(`run-record append failed (BREPJS_RUN_RECORD_PATH=${recordPath}):`, err);
+    });
+  }
 
   if (result.outcome === 'completed') {
     const payload = { outcome: 'completed', ok: result.report.ok, report: result.report };
