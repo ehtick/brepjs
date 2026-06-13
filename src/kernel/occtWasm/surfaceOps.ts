@@ -126,13 +126,102 @@ function deriveCylinder(
   return { origin, direction, radius, isDirect };
 }
 
-/** Cylindrical face axis (point on axis + unit direction). Null for non-cylinders. */
+/** Circumcenter of three points (the center of the unique circle through them). */
+function circumcenter(a: V3, p: V3, q: V3): V3 | null {
+  const ab = subV(p, a);
+  const ac = subV(q, a);
+  const m = crossV(ab, ac);
+  const mSq = dotV(m, m);
+  if (mSq < 1e-18) return null; // collinear samples
+  const abSq = dotV(ab, ab);
+  const acSq = dotV(ac, ac);
+  const d: V3 = [
+    abSq * ac[0] - acSq * ab[0],
+    abSq * ac[1] - acSq * ab[1],
+    abSq * ac[2] - acSq * ab[2],
+  ];
+  const dxm = crossV(d, m);
+  const inv = 1 / (2 * mSq);
+  return [a[0] + dxm[0] * inv, a[1] + dxm[1] * inv, a[2] + dxm[2] * inv];
+}
+
+/** Center of the iso-v circle at height v (three u-samples → circumcenter). */
+function isoCircleCenter(
+  k: OcctKernelWasm,
+  face: KernelShape,
+  uMin: number,
+  uMax: number,
+  v: number
+): V3 | null {
+  return circumcenter(
+    pointOnSurface(k, face, uMin + 0.1 * (uMax - uMin), v),
+    pointOnSurface(k, face, uMin + 0.45 * (uMax - uMin), v),
+    pointOnSurface(k, face, uMin + 0.8 * (uMax - uMin), v)
+  );
+}
+
+/**
+ * Axis of a surface of revolution (cone, torus, general revolution) by sampling.
+ * occt-wasm exposes no analytic accessor for these. Their U parameter is the
+ * angle of revolution, so the iso-v curve at a fixed v is a circle centered on
+ * the axis; two such centers at different heights span the axis.
+ *
+ * Samples three v-levels and uses the farthest-apart pair of centers. Two levels
+ * suffice for a cone or general revolution (v is monotonic along the axis), but
+ * a torus parameterizes v as the tube angle: on a v-symmetric partial torus (a
+ * half-torus, v in [0, pi]) two symmetric samples land at equal heights and
+ * their centers coincide. A third level breaks that symmetry. Avoids the v
+ * extremes so a cone apex (a degenerate zero-radius circle) is not sampled.
+ */
+function deriveAxisBySampling(
+  k: OcctKernelWasm,
+  face: KernelShape
+): {
+  origin: V3;
+  direction: V3;
+} | null {
+  const b = uvBounds(k, face);
+  const centers = [0.2, 0.5, 0.8]
+    .map((f) => isoCircleCenter(k, face, b.uMin, b.uMax, b.vMin + f * (b.vMax - b.vMin)))
+    .filter((c): c is V3 => c !== null);
+  if (centers.length < 2) return null;
+
+  let best: { origin: V3; direction: V3 } | null = null;
+  let bestLen = 1e-9; // require a resolvable separation between centers
+  for (let i = 0; i < centers.length; i++) {
+    for (let j = i + 1; j < centers.length; j++) {
+      const ci = centers[i];
+      const cj = centers[j];
+      if (!ci || !cj) continue;
+      const d = subV(cj, ci);
+      const len = lenV(d);
+      if (len > bestLen) {
+        bestLen = len;
+        best = { origin: ci, direction: [d[0] / len, d[1] / len, d[2] / len] };
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Axis of symmetry (point on axis + unit direction) for an analytic face that
+ * has one. Cylinders use the exact normal-cross derivation; cones, tori, and
+ * surfaces of revolution fall back to circle-center sampling. Null otherwise.
+ */
 export function getSurfaceAxis(
   k: OcctKernelWasm,
   face: KernelShape
 ): { origin: V3; direction: V3 } | null {
-  const cyl = deriveCylinder(k, face);
-  return cyl ? { origin: cyl.origin, direction: cyl.direction } : null;
+  const type = surfaceType(k, face);
+  if (type === 'cylinder') {
+    const cyl = deriveCylinder(k, face);
+    return cyl ? { origin: cyl.origin, direction: cyl.direction } : null;
+  }
+  if (type === 'cone' || type === 'torus' || type === 'revolution') {
+    return deriveAxisBySampling(k, face);
+  }
+  return null;
 }
 
 /** Cylinder radius + handedness for a cylindrical surface. Null for non-cylinders. */
