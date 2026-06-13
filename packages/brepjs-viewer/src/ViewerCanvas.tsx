@@ -71,6 +71,19 @@ function Framing({
   return null;
 }
 
+// Enables material-level (local) clipping planes. Set once; harmless when no material
+// carries a clippingPlanes array, so consumers can opt in per-material without a flag.
+function LocalClipping() {
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    gl.localClippingEnabled = true;
+    return () => {
+      gl.localClippingEnabled = false;
+    };
+  }, [gl]);
+  return null;
+}
+
 export function ViewerCanvas({
   data,
   view = 'iso',
@@ -84,6 +97,7 @@ export function ViewerCanvas({
     // `always` while spinning so the turntable advances; `demand` otherwise keeps the
     // GPU idle. preserveDrawingBuffer stays on so screenshots read back in both modes.
     <Canvas frameloop={autoRotate ? 'always' : 'demand'} gl={{ preserveDrawingBuffer: true }}>
+      <LocalClipping />
       <SceneSetup autoRotate={autoRotate} gridVisible={gridVisible} />
       <Framing data={data} view={view} fitSignal={fitSignal} onFirstFrame={onFirstFrame} />
       {children}
