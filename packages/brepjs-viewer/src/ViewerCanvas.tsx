@@ -8,6 +8,10 @@ import type { MeshData, ViewName } from './types.js';
 export interface ViewerCanvasProps {
   data: MeshData;
   view?: ViewName;
+  /** Bump to re-frame the model on demand (e.g. a "Fit" button). */
+  fitSignal?: number;
+  autoRotate?: boolean;
+  gridVisible?: boolean;
   onFirstFrame?: () => void;
   children?: ReactNode;
 }
@@ -24,15 +28,22 @@ const VIEW_DIR: Record<ViewName, THREE.Vector3> = {
 function Framing({
   data,
   view,
+  fitSignal,
   onFirstFrame,
 }: {
   data: MeshData;
   view: ViewName;
+  fitSignal?: number | undefined;
   onFirstFrame?: (() => void) | undefined;
 }) {
   const camera = useThree((s) => s.camera);
   const invalidate = useThree((s) => s.invalidate);
   const fired = useRef(false);
+  // Hold the latest onFirstFrame in a ref so it stays out of the framing effect's deps:
+  // an inline callback from a consumer would otherwise re-run the effect on every parent
+  // render and snap the camera back to the preset, interrupting an in-progress orbit.
+  const onFirstFrameRef = useRef(onFirstFrame);
+  onFirstFrameRef.current = onFirstFrame;
   const { center, radius } = useMemo(() => {
     // Throwaway geometry just for the bounding sphere — dispose it so its GPU buffers
     // aren't leaked on every `data` change (GC alone won't free them).
@@ -54,17 +65,27 @@ function Framing({
     invalidate();
     if (!fired.current) {
       fired.current = true;
-      onFirstFrame?.();
+      onFirstFrameRef.current?.();
     }
-  }, [camera, invalidate, center, radius, view, onFirstFrame]);
+  }, [camera, invalidate, center, radius, view, fitSignal]);
   return null;
 }
 
-export function ViewerCanvas({ data, view = 'iso', onFirstFrame, children }: ViewerCanvasProps) {
+export function ViewerCanvas({
+  data,
+  view = 'iso',
+  fitSignal,
+  autoRotate = false,
+  gridVisible = true,
+  onFirstFrame,
+  children,
+}: ViewerCanvasProps) {
   return (
-    <Canvas frameloop="demand" gl={{ preserveDrawingBuffer: true }}>
-      <SceneSetup />
-      <Framing data={data} view={view} onFirstFrame={onFirstFrame} />
+    // `always` while spinning so the turntable advances; `demand` otherwise keeps the
+    // GPU idle. preserveDrawingBuffer stays on so screenshots read back in both modes.
+    <Canvas frameloop={autoRotate ? 'always' : 'demand'} gl={{ preserveDrawingBuffer: true }}>
+      <SceneSetup autoRotate={autoRotate} gridVisible={gridVisible} />
+      <Framing data={data} view={view} fitSignal={fitSignal} onFirstFrame={onFirstFrame} />
       {children}
     </Canvas>
   );
