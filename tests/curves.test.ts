@@ -7,8 +7,8 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- test array indexing */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { initKernel } from './setup.js';
-import { box, cylinder, getFaces, getEdges, isOk, isErr, unwrap, castShape } from '@/index.js';
+import { initKernel, currentKernel } from './setup.js';
+import { box, cylinder, cut, getFaces, getEdges, isOk, isErr, unwrap, castShape } from '@/index.js';
 import {
   curvesAsEdgesOnFace,
   curvesAsEdgesOnPlane,
@@ -23,6 +23,7 @@ import {
 } from '@/2d/curves.js';
 import { Curve2D } from '@/2d/lib/index.js';
 import { getKernel } from '@/kernel/index.js';
+import { skipIfDiverges } from './helpers/kernelDivergences.js';
 
 beforeAll(async () => {
   await initKernel();
@@ -66,28 +67,48 @@ describe('curvesAsEdgesOnFace', () => {
     expect(edges.length).toBe(1);
   });
 
-  it('projects curves onto a cylindrical face with original scale', () => {
+  it('projects curves onto a cylindrical face with original scale', (ctx) => {
+    skipIfDiverges(ctx, 'curves.cylinderUnwrapOriginal');
+    const kernel = getKernel();
     const cyl = cylinder(5, 10);
-    const faces = getFaces(cyl);
-    // Find the curved (cylindrical) face
-    const cylFace = faces.find((f) => {
-      try {
-        const kernel = getKernel();
-        const surf = kernel.extractSurfaceFromFace(f.wrapped);
-        kernel.getSurfaceCylinderData(surf);
-        return true; // didn't throw → it's a cylinder face
-      } catch {
-        return false;
-      }
-    });
+    const cylFace = getFaces(cyl).find((f) => kernel.surfaceType(f.wrapped) === 'cylinder');
+    expect(cylFace).toBeDefined();
+    if (!cylFace) return;
 
-    if (cylFace) {
-      const kernel = getKernel();
-      const curve = new Curve2D(kernel.makeLine2d(0, 0, 1, 1));
-      const result = curvesAsEdgesOnFace([curve], cylFace, 'original');
-      expect(isOk(result)).toBe(true);
-    }
+    const surf = kernel.extractSurfaceFromFace(cylFace.wrapped);
+    const cylData = kernel.getSurfaceCylinderData(surf);
+    expect(cylData).not.toBeNull();
+    expect(cylData?.radius).toBeCloseTo(5, 6);
+    expect(cylData?.isDirect).toBe(true);
+
+    const curve = new Curve2D(kernel.makeLine2d(0, 0, 1, 1));
+    const result = curvesAsEdgesOnFace([curve], cylFace, 'original');
+    expect(isOk(result)).toBe(true);
   });
+
+  // occt-wasm-specific: it derives isDirect from the (orientation-aware) face
+  // normal. occt reads gp_Cylinder::Direct() directly and brepkit hardcodes true,
+  // so neither exercises the orientation-compensation path this guards.
+  it.skipIf(currentKernel !== 'occt-wasm')(
+    'reports isDirect independent of face orientation (reversed bore)',
+    () => {
+      const kernel = getKernel();
+      // A tube's inner bore is a REVERSED cylindrical face; its handedness must
+      // still match gp_Cylinder::Direct() (true), not the inward-pointing normal.
+      const tube = unwrap(cut(cylinder(5, 10), cylinder(2, 10)));
+      const bore = getFaces(tube).find(
+        (f) =>
+          kernel.surfaceType(f.wrapped) === 'cylinder' &&
+          kernel.shapeOrientation(f.wrapped) === 'reversed'
+      );
+      expect(bore).toBeDefined();
+      if (!bore) return;
+
+      const cylData = kernel.getSurfaceCylinderData(kernel.extractSurfaceFromFace(bore.wrapped));
+      expect(cylData?.radius).toBeCloseTo(2, 6);
+      expect(cylData?.isDirect).toBe(true);
+    }
+  );
 
   it('returns error for unsupported face type with original scale', () => {
     // A torus face is neither planar nor cylindrical — should fail with original scale
