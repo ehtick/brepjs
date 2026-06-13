@@ -17,7 +17,13 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { RUN_PROGRAM_INPUT_SCHEMA, runProgramTool } from './tools.js';
+import {
+  EXPORT_PART_INPUT_SCHEMA,
+  RUN_PROGRAM_INPUT_SCHEMA,
+  exportPartTool,
+  runProgramTool,
+  type ExportPartToolArgs,
+} from './tools.js';
 
 // Read the version from package.json at runtime so it tracks the package (this module sits two
 // levels below the package root in both src/ and dist/). NB: don't use
@@ -39,6 +45,12 @@ server.setRequestHandler(ListToolsRequestSchema, () => ({
         'Execute an agent-authored brepjs program in an isolated sandbox and return the verification report (validity, measurements, topology). Use this to build a part and check it in one step.',
       inputSchema: RUN_PROGRAM_INPUT_SCHEMA,
     },
+    {
+      name: 'export_part',
+      description:
+        'Build a brepjs part in the sandbox and export it to a directory (STEP/GLB/STL). Use this to hand off the final artifact once a part verifies.',
+      inputSchema: EXPORT_PART_INPUT_SCHEMA,
+    },
   ],
 }));
 
@@ -50,6 +62,34 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const timeoutMs =
       typeof a['timeoutMs'] === 'number' && a['timeoutMs'] > 0 ? a['timeoutMs'] : undefined;
     return runProgramTool({ code, ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
+  }
+  if (req.params.name === 'export_part') {
+    const a = req.params.arguments ?? {};
+    const code = typeof a['code'] === 'string' ? a['code'] : '';
+    const outDir = typeof a['outDir'] === 'string' ? a['outDir'] : '';
+    const timeoutMs =
+      typeof a['timeoutMs'] === 'number' && a['timeoutMs'] > 0 ? a['timeoutMs'] : undefined;
+    const f =
+      typeof a['formats'] === 'object' && a['formats'] !== null
+        ? (a['formats'] as Record<string, unknown>)
+        : undefined;
+    // Collapse an empty / all-false formats object to undefined so exportProgram's "all" default
+    // applies, rather than spawning with no flags (which the CLI rejects).
+    const formats =
+      f && (f['step'] === true || f['glb'] === true || f['stl'] === true)
+        ? {
+            ...(f['step'] === true ? { step: true } : {}),
+            ...(f['glb'] === true ? { glb: true } : {}),
+            ...(f['stl'] === true ? { stl: true } : {}),
+          }
+        : undefined;
+    const toolArgs: ExportPartToolArgs = {
+      code,
+      outDir,
+      ...(formats !== undefined ? { formats } : {}),
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    };
+    return exportPartTool(toolArgs);
   }
   throw new Error(`Unknown tool: ${req.params.name}`);
 });
