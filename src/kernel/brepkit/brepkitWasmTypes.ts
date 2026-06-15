@@ -27,6 +27,25 @@ export interface BrepkitMesh {
   packedBuffer(): Uint8Array;
 }
 
+/**
+ * Per-face-grouped mesh returned by `tessellateSolidGroupedBinary` (packed).
+ *
+ * Hand-added forward-declaration: the binary binding ships in a brepkit-wasm
+ * release newer than the one this file is synced against. Once the dependency
+ * is bumped, `npm run sync:brepkit-types` regenerates this from the upstream
+ * `.d.ts` (the method is already in the sync script's Tessellation list).
+ */
+export interface BrepkitGroupedMesh {
+  /** Flattened vertex positions `[x, y, z, ...]`. */
+  readonly positions: Float32Array;
+  /** Flattened per-vertex normals `[nx, ny, nz, ...]`. */
+  readonly normals: Float32Array;
+  /** Triangle indices (groups of 3). */
+  readonly indices: Uint32Array;
+  /** Per-face start offsets into `indices`; last element equals `indices.length`. */
+  readonly faceOffsets: Uint32Array;
+}
+
 /** Edge polylines returned by `meshEdges`. */
 export interface BrepkitEdgeLines {
   /** Flattened vertex positions `[x, y, z, ...]`. */
@@ -542,6 +561,18 @@ export interface BrepkitKernel {
     deflection: number,
     angularTolerance?: number | null
   ): string;
+
+  /**
+   * Binary counterpart of `tessellateSolidGrouped` — packed typed arrays, no JSON.
+   *
+   * Optional (and hand-added) so the adapter's `typeof`-based feature detection
+   * typechecks while the pinned brepkit-wasm release may not yet expose it.
+   */
+  tessellateSolidGroupedBinary?(
+    solid: number,
+    deflection: number,
+    angularTolerance?: number | null
+  ): BrepkitGroupedMesh;
 
   tessellateSolidUV(solid: number, deflection: number, angularTolerance?: number | null): string;
 
