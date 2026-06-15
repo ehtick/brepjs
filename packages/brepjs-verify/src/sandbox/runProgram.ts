@@ -8,16 +8,13 @@
  * live WASM handles), and the temp program directory is always cleaned up.
  */
 
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { VerifyReport } from '../verify/report.js';
-
-const execFileAsync = promisify(execFile);
 
 /** The verify report as serialized by the CLI (the report plus the top-level `ok` verdict). */
 export type SerializedReport = VerifyReport & { ok: boolean };
@@ -57,6 +54,24 @@ export interface ExportFormats {
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_MEMORY_MB = 2048;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
+
+/**
+ * In-flight sandbox process *groups*, keyed by group-leader pid. Tracked so a dying host can reap
+ * its runs (see installSandboxShutdownHandlers) — the per-run timeout can't, since its timer dies
+ * with the host.
+ */
+const activeGroups = new Set<number>();
+
+/** SIGKILL (or `signal`) an entire detached process group by its leader pid; ignore if already gone. */
+function killGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    // Negative pid → the whole process GROUP (POSIX). On win32 (no POSIX groups) fall back to the
+    // root process — best effort; the dev CLI targets POSIX.
+    process.kill(process.platform === 'win32' ? pid : -pid, signal);
+  } catch {
+    // The group is already gone (the leader exited between the check and the signal).
+  }
+}
 
 /**
  * Clamp a caller-supplied limit to a positive, finite value, falling back to the default otherwise.
@@ -109,41 +124,132 @@ async function runVerifyCli(
     const cliArgs = makeArgs(partPath);
     const cmd = useTsx ? 'npx' : process.execPath;
     const args = useTsx ? ['tsx', cliEntry, ...cliArgs] : [cliEntry, ...cliArgs];
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      // Append rather than replace, so an existing NODE_OPTIONS (flags, other limits) survives.
+      NODE_OPTIONS: [process.env['NODE_OPTIONS'], `--max-old-space-size=${maxMemoryMb}`]
+        .filter(Boolean)
+        .join(' '),
+    };
 
-    try {
-      const { stdout, stderr } = await execFileAsync(cmd, args, {
-        timeout: timeoutMs,
-        killSignal: 'SIGKILL',
-        maxBuffer: MAX_OUTPUT_BYTES,
-        env: {
-          ...process.env,
-          // Append rather than replace, so an existing NODE_OPTIONS (flags, other limits) survives.
-          NODE_OPTIONS: [process.env['NODE_OPTIONS'], `--max-old-space-size=${maxMemoryMb}`]
-            .filter(Boolean)
-            .join(' '),
-        },
-      });
-      return { stdout, stderr, timedOut: false, outputTooLarge: false, exitCode: 0 };
-    } catch (err) {
-      const e = err as {
-        stdout?: string;
-        stderr?: string;
-        killed?: boolean;
-        code?: number | string | null;
-      };
-      // The CLI prints its JSON document and exits 1 for a not-ok part — that is not a crash; the
-      // caller inspects stdout. We only classify timeout / output-cap here.
-      return {
-        stdout: e.stdout ?? '',
-        stderr: e.stderr ?? (err instanceof Error ? err.message : String(err)),
-        timedOut: Boolean(e.killed) && e.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
-        outputTooLarge: e.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
-        exitCode: typeof e.code === 'number' ? e.code : null,
-      };
-    }
+    return await spawnCliOutcome(cmd, args, env, timeoutMs);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Spawn the verify CLI in its OWN process group and enforce the wall-clock budget by SIGKILLing the
+ * WHOLE group on timeout — not just the direct child.
+ *
+ * Why a process group rather than Node's built-in `execFile` timeout: in dev/test the CLI runs as
+ * `npx tsx <main.ts>`, so the process that actually executes the part (and can spin on a CPU-bound
+ * OCCT op) is a *grandchild* behind npx+tsx. `child_process`' `timeout`/`killSignal` signals only
+ * the direct child, so a fired timeout SIGKILLs `npx` and orphans the still-spinning grandchild
+ * forever (it reparents to init and keeps burning a core). Spawning `detached` makes the child a
+ * process-group leader that npx's descendants inherit, so `process.kill(-pid, …)` reaps the entire
+ * tree. The production path (`node dist/cli/main.js`) has no intermediary, but the group kill is
+ * equally correct there.
+ */
+function spawnCliOutcome(
+  cmd: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  timeoutMs: number
+): Promise<CliOutcome> {
+  return new Promise<CliOutcome>((resolve) => {
+    const child = spawn(cmd, args, { env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    // Track the group so a host shutdown can reap it even if this run's timer never fires.
+    if (child.pid !== undefined) activeGroups.add(child.pid);
+
+    let stdout = '';
+    let stderr = '';
+    let stdoutBytes = 0;
+    let timedOut = false;
+    let outputTooLarge = false;
+    let settled = false;
+
+    const killTree = (signal: NodeJS.Signals): void => {
+      if (child.pid !== undefined) killGroup(child.pid, signal);
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killTree('SIGKILL');
+    }, timeoutMs);
+
+    child.stdout?.on('data', (chunk: Buffer) => {
+      // Already over the cap and condemned — don't re-fire the kill on every buffered chunk.
+      if (outputTooLarge) return;
+      stdoutBytes += chunk.length;
+      if (stdoutBytes > MAX_OUTPUT_BYTES) {
+        // Mirror execFile's maxBuffer: a runaway writer is killed and classified as output-too-large.
+        outputTooLarge = true;
+        killTree('SIGKILL');
+        return;
+      }
+      stdout += chunk.toString();
+    });
+    // stderr is diagnostic only; cap it by byte count (matching stdout — `.length` would count
+    // UTF-16 code units, undercounting multi-byte output) so a chatty failure can't exhaust memory.
+    let stderrBytes = 0;
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderrBytes += chunk.length;
+      if (stderrBytes <= MAX_OUTPUT_BYTES) stderr += chunk.toString();
+    });
+
+    const finish = (exitCode: number | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (child.pid !== undefined) activeGroups.delete(child.pid);
+      resolve({ stdout, stderr, timedOut, outputTooLarge, exitCode });
+    };
+
+    // The command itself could not be spawned (e.g. ENOENT) — surface as a crash (no JSON report).
+    child.on('error', (err: Error) => {
+      if (!stderr) stderr = err.message;
+      finish(null);
+    });
+    // 'close' fires once stdio is fully drained; a signal-kill reports a null exit code.
+    child.on('close', (code: number | null) => finish(code));
+  });
+}
+
+/** SIGKILL every in-flight sandbox process group now. Exported so a host can reap explicitly. */
+export function killActiveSandboxes(signal: NodeJS.Signals = 'SIGKILL'): void {
+  for (const pid of activeGroups) killGroup(pid, signal);
+  activeGroups.clear();
+}
+
+let shutdownHandlersInstalled = false;
+
+/**
+ * Install process-shutdown hooks that reap any in-flight sandbox process groups when THIS process
+ * (the host — e.g. the MCP server) terminates. Idempotent; call once at startup from an entrypoint.
+ *
+ * Rationale: the per-run timeout (`spawnCliOutcome`) only protects a run while the host is alive —
+ * its timer dies with the host. If the host is stopped (the agent disconnects) before a run's
+ * budget elapses, the `detached` sandbox group is in its own session and survives, burning a core
+ * indefinitely. These hooks SIGKILL every tracked group on the way down so a dying host doesn't
+ * leak its children. (A hard SIGKILL of the host can't be trapped — that residual needs the kernel's
+ * PR_SET_PDEATHSIG, which Node doesn't expose.)
+ */
+export function installSandboxShutdownHandlers(): void {
+  if (shutdownHandlersInstalled) return;
+  shutdownHandlersInstalled = true;
+  // Normal or explicit exit: reap synchronously (process.kill is sync and valid in an 'exit' handler).
+  process.on('exit', () => killActiveSandboxes('SIGKILL'));
+  // Signal-initiated stop (the agent terminating the server): reap, then keep terminating with the
+  // conventional 128+signal exit code so the host still exits promptly.
+  process.once('SIGTERM', () => {
+    killActiveSandboxes('SIGKILL');
+    process.exit(143);
+  });
+  process.once('SIGINT', () => {
+    killActiveSandboxes('SIGKILL');
+    process.exit(130);
+  });
 }
 
 function tryParse<T>(out: string): T | null {
