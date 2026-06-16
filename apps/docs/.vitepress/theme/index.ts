@@ -48,6 +48,32 @@ function registerPreloadErrorRecovery(): void {
   });
 }
 
+/**
+ * Initialize PostHog product analytics on the client.
+ *
+ * Dynamic-imported (like Vercel's analytics below) so `posthog-js` never loads
+ * during VitePress's SSR prerender. The `defaults` preset enables
+ * `capture_pageview: 'history_change'`, so VitePress route changes emit
+ * pageviews without wiring the router by hand. No key set (local dev / forks
+ * without the env var) → skip init entirely.
+ */
+async function initPostHog(): Promise<void> {
+  const key = import.meta.env.VITE_POSTHOG_PROJECT_TOKEN;
+  if (!key) return;
+
+  const { default: posthog } = await import('posthog-js');
+  posthog.init(key, {
+    // Same-origin Vercel reverse proxy (vercel.json rewrites) so ingestion
+    // dodges ad blockers; ui_host keeps toolbar/links on the real app.
+    api_host: import.meta.env.VITE_POSTHOG_HOST ?? '/ingest',
+    ui_host: 'https://us.posthog.com',
+    defaults: '2025-05-24',
+    // We never call identify(), so don't mint a person profile per anonymous
+    // visitor — keeps this to pageview/event analytics only.
+    person_profiles: 'identified_only',
+  });
+}
+
 const theme: Theme = {
   extends: DefaultTheme,
   Layout: () => h(Layout),
@@ -57,6 +83,7 @@ const theme: Theme = {
     // emit pageviews automatically once mounted.
     if (typeof window !== 'undefined') {
       void import('@vercel/analytics').then(({ inject }) => inject());
+      void initPostHog();
       registerPreloadErrorRecovery();
     }
   },
