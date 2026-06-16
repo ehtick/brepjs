@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import DefaultTheme from 'vitepress/theme';
-import { onMounted, nextTick, watch } from 'vue';
-import { useRoute } from 'vitepress';
+import { computed, onMounted, nextTick, watch } from 'vue';
+import { useData, useRoute } from 'vitepress';
 import { decorateCodeBlocks } from './playgroundLink';
-import HeroCube from './components/HeroCube.vue';
+import Landing from './components/Landing.vue';
 
 const { Layout } = DefaultTheme;
+const { frontmatter } = useData();
 const route = useRoute();
+
+const isLanding = computed(() => frontmatter.value.landing === true);
 
 const decorate = () => {
   void nextTick(() => decorateCodeBlocks());
@@ -17,11 +20,6 @@ watch(() => route.path, decorate);
 </script>
 
 <template>
-  <Layout>
-    <template #home-hero-image>
-      <ClientOnly>
-        <HeroCube />
-      </ClientOnly>
-    </template>
-  </Layout>
+  <Landing v-if="isLanding" />
+  <Layout v-else />
 </template>
