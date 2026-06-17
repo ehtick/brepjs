@@ -98,16 +98,16 @@ export default oRing();
   {
     id: 'axial-fan',
     label: 'Axial Cooling Fan (57x15)',
-    description: 'An axial cooling fan with a curved impeller.',
+    description: 'An axial cooling fan with a ring of pitched blades.',
     code: `import {
   box,
-  convexHull,
   cutAll,
   cylinder,
   edgeFinder,
   fillet,
   fuseAll,
   rotate,
+  translate,
   unwrap,
 } from 'brepjs/quick';
 
@@ -149,60 +149,22 @@ function axialFan({
   // Hub: solid cylinder protruding above the top face.
   const hubBody = cylinder(hub / 2, depth + hubHeight, { at: [0, 0, 0] });
 
-  // Each blade is an organically curved, pitched vane. We march a rectangular
-  // cross-section along a curling path from hub to rim — the path sweeps
-  // tangentially (so the blade scoops like a real impeller) and the section
-  // twists from a steep pitch at the root to a shallow one at the tip. Hulling
-  // each consecutive pair of sections and fusing the chain yields a smooth,
-  // concave-curved blade a single straight hull can't express.
+  // A ring of flat, pitched blades. Each blade is a thin plate spanning hub to
+  // rim, built flat on the X axis at z = 0, tilted about that radial axis to set
+  // its angle of attack, then lifted just below the top face. The root sinks
+  // into the hub so the fuse is clean.
   const rInner = hub / 2 - 1; // root bites into the hub for a clean fuse
-  const rOuter = width / 2 - 5; // tip stays 1 mm inside the air bore radius (width/2 - 4)
-  const chord = 9; // blade chord (tangential width)
-  const thick = 1.1; // blade material thickness
-  const zBase = depth - 4; // sits just below the top face
-  const sweep = 1.05; // total tangential curl from root to tip (radians)
-  const pitch0 = 0.95; // steep pitch at the root
-  const pitch1 = 0.35; // shallower pitch at the tip
-  const steps = 10; // sections along the blade — more = smoother
+  const rOuter = width / 2 - 5; // tip stays inside the air bore radius
+  const span = rOuter - rInner;
+  const cx = rInner + span / 2;
+  const chord = 9; // blade width (tangential)
+  const thick = 1.4; // blade thickness
+  const pitch = 30; // blade angle of attack (deg)
+  const zMid = depth - 4; // blade plane just below the top face
 
-  // One cross-section (4 corners) at path parameter t in [0, 1].
-  const section = (t: number): [number, number, number][] => {
-    const rr = rInner + (rOuter - rInner) * t;
-    const ang = sweep * t * t; // accelerating curl reads as an organic scoop
-    const pitch = pitch0 + (pitch1 - pitch0) * t;
-    const cos = Math.cos(ang);
-    const sin = Math.sin(ang);
-    const cx = rr * cos;
-    const cy = rr * sin;
-    const tx = -sin; // tangential direction at this radius
-    const ty = cos;
-    const ch = chord / 2;
-    const th = thick / 2;
-    const cHx = Math.cos(pitch) * tx * ch;
-    const cHy = Math.cos(pitch) * ty * ch;
-    const cHz = Math.sin(pitch) * ch;
-    const nHx = -Math.sin(pitch) * tx * th;
-    const nHy = -Math.sin(pitch) * ty * th;
-    const nHz = Math.cos(pitch) * th;
-    return [
-      [cx - cHx - nHx, cy - cHy - nHy, zBase - cHz - nHz],
-      [cx + cHx - nHx, cy + cHy - nHy, zBase + cHz - nHz],
-      [cx + cHx + nHx, cy + cHy + nHy, zBase + cHz + nHz],
-      [cx - cHx + nHx, cy - cHy + nHy, zBase - cHz + nHz],
-    ];
-  };
-
-  // One blade = a fused chain of per-segment hulls; place a ring of them
-  // (fresh blade per slot — rotate consumes the handle it's given).
   const makeBlade = () => {
-    const segs = [];
-    let prev = section(0);
-    for (let stp = 1; stp <= steps; stp++) {
-      const cur = section(stp / steps);
-      segs.push(unwrap(convexHull([...prev, ...cur])));
-      prev = cur;
-    }
-    return unwrap(fuseAll(segs));
+    const plate = box(span, chord, thick, { at: [cx, 0, 0] });
+    return translate(rotate(plate, pitch, { axis: [1, 0, 0] }), [0, 0, zMid]);
   };
   const bladeRing = [];
   for (let i = 0; i < blades; i++) {
@@ -213,81 +175,6 @@ function axialFan({
 }
 
 export default axialFan();`,
-  },
-  {
-    id: 'domed-foot',
-    label: 'Domed appliance foot',
-    description: 'A tapered rubber foot with a domed top and boss.',
-    code: `import { cone, cut, cylinder, fuse, intersect, sphere, unwrap } from 'brepjs/quick';
-
-// Rubber appliance foot: a tapered puck with a domed top, a raised central
-// screw boss, and an axial clearance hole. Defaults suit an M4 foot.
-function domedFoot(
-  diameter = 25,   // base diameter (mm)
-  height = 12,     // total height (mm)
-  slant = 10,      // wall taper angle (deg)
-  domeRad = 2,     // rounded-top radius (mm)
-  bossDia = 9,     // central screw-boss diameter (mm)
-  bossThick = 3,   // boss seating thickness (mm)
-  screwClear = 2.4, // clearance-hole radius (M4)
-) {
-  const rBase = diameter / 2;
-  const rTop = rBase - height * Math.tan((slant * Math.PI) / 180); // narrower top
-
-  // Body: a truncated cone, wide base to narrow top.
-  const cylBody = cone(rBase, rTop, height);
-
-  // Dome the top by intersecting an over-tall cone with a rounding sphere — more
-  // robust than an edge fillet, and the straight walls below stay intact.
-  const rounder = sphere(rTop + domeRad, { at: [0, 0, height - (rTop + domeRad) + domeRad] });
-  const tall = cone(rBase, Math.max(rTop - domeRad, 0.5), height + domeRad);
-  const domed = unwrap(intersect(tall, rounder));
-  const body = unwrap(fuse(cylBody, domed));
-
-  // Raised central boss the screw head bears on — protrudes below the flat base.
-  const boss = cylinder(bossDia / 2, bossThick, { at: [0, 0, -bossThick] });
-  const withBoss = unwrap(fuse(body, boss));
-
-  // Axial clearance hole, started below the protruding boss and over-length so
-  // it punches cleanly through the boss, body, and domed crown.
-  const hole = cylinder(screwClear, height + bossThick + domeRad + 2, {
-    at: [0, 0, -bossThick - 1],
-  });
-  return unwrap(cut(withBoss, hole));
-}
-
-export default domedFoot();`,
-  },
-  {
-    id: 'rounded-cylinder',
-    label: 'Rounded-top cylinder (post / tube)',
-    description: 'A post with a rolled top, optionally bored to a tube.',
-    code: `import { cylinder, sphere, intersect, cut, unwrap } from 'brepjs/quick';
-
-// Rounded-top cylinder: a post whose top rim is rolled into a dome by clipping
-// it with a sphere, optionally bored through to make a tube.
-function roundedCylinder(radius = 12, height = 24, topRadius = 6, boreRadius = 5) {
-  const r2 = Math.min(topRadius, radius - 0.5, height / 2); // clamp the round-over
-
-  const post = cylinder(radius, height, { at: [0, 0, 0] });
-
-  // Sphere sized to meet the wall r2 below the top (R² = radius² + (R−r2)²),
-  // positioned so its pole sits at the top face — clips the rim to a dome.
-  const sphereR = (radius * radius + r2 * r2) / (2 * r2);
-  const clipper = sphere(sphereR, { at: [0, 0, height - sphereR] });
-  let solid = unwrap(intersect(post, clipper));
-
-  // Optional concentric bore → tube.
-  if (boreRadius > 0) {
-    const bore = cylinder(boreRadius, height + 2, { at: [0, 0, -1] });
-    solid = unwrap(cut(solid, bore));
-  }
-
-  return solid;
-}
-
-export default roundedCylinder();
-`,
   },
   {
     id: 'fan-guard',
@@ -604,34 +491,6 @@ function rubberFoot(
 }
 
 export default rubberFoot();`,
-  },
-  {
-    id: 'rounded-knob',
-    label: 'Rounded-top knob / post',
-    description:
-      'Cylindrical knob with a rounded-over top rim and an optional concentric through-bore.',
-    code: `import { cylinder, cut, fillet, edgeFinder, unwrap } from 'brepjs/quick';
-
-// Rounded-top knob / post: a cylinder whose top rim is rounded over by r2, with
-// an optional concentric bore (ir) that turns it into a tube. The base stays flat.
-//   r   — body radius        r2 — top round-over radius (<= r, < h)
-//   h   — overall height     ir — bore radius (0 = solid)
-function roundedKnob(r: number, h: number, r2: number, ir: number) {
-  const body = cylinder(r, h, { at: [0, 0, 0] });
-
-  // Optional concentric bore, over-tall to punch through both faces.
-  const blank = ir > 0 ? unwrap(cut(body, cylinder(ir, h + 2, { at: [0, 0, -1] }))) : body;
-
-  // Only the top outer rim sits exactly r from the top centre, so atDistance
-  // isolates it — leaving the base and bore rims crisp.
-  const topRim = edgeFinder().atDistance(r, [0, 0, h]).findAll(blank);
-
-  return unwrap(fillet(blank, topRim, r2));
-}
-
-// Default: 12 mm tall, 16 mm diameter, 3 mm rounded top, bored through.
-export default roundedKnob(8, 12, 3, 2);
-`,
   },
   {
     id: 'ball-bearing',
@@ -1392,102 +1251,6 @@ function txEnclosure({
 export default txEnclosure();`,
   },
   {
-    id: 'wall-ring-hook',
-    label: 'Wall ring hook (J-hook)',
-    description:
-      'A wall-mount loop hook: a screw-down pad flaring tangentially into a bored ring for cables, straps, or coats.',
-    code: `import {
-  box,
-  cutAll,
-  cylinder,
-  edgeFinder,
-  extrude,
-  fillet,
-  fuse,
-  polygon,
-  unwrap,
-} from 'brepjs/quick';
-
-// Wall ring hook (loop / J-hook): a flat rectangular mounting pad that flares
-// tangentially up into a horizontal ring you loop a strap, cable or coat over.
-// The pad takes two screws; the ring is a bored barrel whose neck blends into
-// it on a true tangent so there is no weak shoulder. Pin axis runs along Y so
-// the ring opening faces front. Defaults model a ~50 mm utility wall hook.
-function wallRingHook({
-  baseWidth = 50, // mounting pad width along X (mm)
-  depth = 10, // pad / ring thickness along the pin axis Y (mm)
-  plate = 5, // mounting pad thickness in Z (mm)
-  holeZ = 28, // height of the ring centre above the pad (mm)
-  outerR = 16, // outer radius of the ring barrel (mm)
-  innerR = 11, // through-hole radius of the ring (mm)
-  screwR = 2.4, // mounting screw clearance radius, M4 (mm)
-} = {}) {
-  const halfW = baseWidth / 2;
-
-  // Tangent from a base corner (halfW, 0) to the ring circle centred at
-  // (0, holeZ): the neck's sloped side rides this line, so the pad blends into
-  // the barrel without a notch. Solve the upper tangent point on the circle.
-  const cz = holeZ;
-  const dist = Math.hypot(halfW, cz); // corner-to-centre distance
-  const tangentLen = Math.sqrt(Math.max(dist * dist - outerR * outerR, 1)); // >0 guard
-  const baseAng = Math.atan2(-cz, halfW); // corner -> centre ray angle
-  const tanAng = Math.atan2(outerR, tangentLen); // half subtended angle
-  const tAng = baseAng + tanAng + Math.PI / 2; // rotate to the tangent radius
-  const tpx = Math.abs(outerR * Math.cos(tAng));
-  const tpz = cz + outerR * Math.sin(tAng);
-
-  // Neck profile in the X-Z plane: pad corners at the bottom, tangent points
-  // near the barrel at the top, mirrored across X. Stop the top a hair below
-  // the ring centre so the barrel (added next) buries the seam with real
-  // overlap rather than a coincident edge.
-  const topZ = Math.min(tpz, holeZ - 0.5);
-  const topX = Math.max(Math.min(tpx, outerR - 0.5), 1);
-  const profile = unwrap(
-    polygon([
-      [-halfW, 0, 0],
-      [halfW, 0, 0],
-      [topX, 0, topZ],
-      [-topX, 0, topZ],
-    ]),
-  );
-  // Extrude the profile along +Y by \`depth\` (spans y in [0, depth]).
-  const neck = unwrap(extrude(profile, [0, depth, 0]));
-
-  // Mounting pad: a thin slab under the neck, centred on the pad footprint.
-  // Round its four short vertical (Z) corners FIRST, while it is a clean box,
-  // so the soft corners survive the fuse. It rises 0.5 mm into the neck base so
-  // the two weld into one solid.
-  const padH = plate + 0.5;
-  const padBlank = box(baseWidth, depth, padH, { at: [0, depth / 2, padH / 2 - 0.5] });
-  const padEdges = edgeFinder().inDirection('Z').findAll(padBlank);
-  const pad = unwrap(fillet(padBlank, padEdges, Math.min(plate * 0.5, 2)));
-
-  // Ring barrel: a horizontal cylinder along Y, length = depth, centred on the
-  // pad in Y and lifted to holeZ. Overlaps the neck top so it fuses cleanly.
-  const barrel = cylinder(outerR, depth, { at: [0, 0, holeZ], axis: [0, 1, 0] });
-
-  // Weld pairwise (never fuseAll): pad -> neck -> barrel into one rigid body.
-  let body = pad;
-  body = unwrap(fuse(body, neck));
-  body = unwrap(fuse(body, barrel));
-
-  // Bore the ring through-hole along Y, over-length so it punches both faces.
-  const bore = cylinder(innerR, depth + 2, { at: [0, -depth / 2 - 1, holeZ], axis: [0, 1, 0] });
-
-  // Two screw clearance holes through the pad (Z bores, inset from the edges).
-  const screwOffset = halfW - Math.max(screwR + 3, 6);
-  const screwL = padH + 2;
-  const screws = [-screwOffset, screwOffset].map((sx) =>
-    cylinder(screwR, screwL, { at: [sx, depth / 2, -1] }),
-  );
-
-  return unwrap(cutAll(body, [bore, ...screws]));
-}
-
-export default wallRingHook();
-`,
-  },
-  {
     id: 'tripod-rc2-plate',
     label: 'Manfrotto RC2 quick-release plate',
     description:
@@ -1790,294 +1553,6 @@ function vGrooveSlider({
 
 export default vGrooveSlider();
 `,
-  },
-  {
-    id: 'gridfinity-baseplate',
-    label: 'Gridfinity Baseplate',
-    description:
-      'Parametric Gridfinity baseplate: a cols x rows grid of 42 mm cells with chamfered socket wells and per-cell magnet pockets on a rounded-corner plate.',
-    code: `import {
-  box,
-  cutAll,
-  cylinder,
-  drawRoundedRectangle,
-  edgeFinder,
-  fillet,
-  translate,
-  unwrap,
-} from 'brepjs/quick';
-
-// Gridfinity baseplate — the tray that bins click down into (the mating half of
-// the Gridfinity bin). A cols x rows grid of 42 mm cells on a 5 mm plate with
-// rounded outer corners; every cell carries a chamfered square socket well that
-// receives a bin's foot, plus four 6.5 mm magnet pockets per cell drilled from
-// below. One rigid plate: a filleted slab with everything cut out of it.
-function gridfinityBaseplate({ cols = 2, rows = 2 } = {}) {
-  const PITCH = 42; // Gridfinity grid pitch (mm)
-  const HEIGHT = 5; // plate thickness — the spec baseplate height
-  const OUTER_R = 4; // outer corner radius (8 mm corner diameter)
-  const CELL_TOP = 41.5; // socket mouth size — 0.5 mm gap between cells
-  const TOP_R = 3.75; // socket mouth corner radius
-  // Socket cross-section (spec _BASEPLATE_PROFILE): from the well floor the wall
-  // goes out 0.7 at 45 deg, straight up 1.8, then out 2.15 at 45 deg to the rim.
-  const STEP_INSET = 2.15; // rim -> top of the vertical wall (per side)
-  const FLOOR_INSET = 2.85; // rim -> well floor (per side)
-  const FLOOR_DROP = 2.5; // mouth -> top of vertical wall (the two 45 deg + riser)
-  const WELL_DEPTH = 4.65; // total socket depth; leaves ~0.35 mm floor under HEIGHT
-
-  const MAG_DIA = 6.5; // magnet pocket diameter
-  const MAG_DEPTH = 2.4; // magnet pocket depth (2 mm magnet + clearance)
-  const HOLE_FROM_SIDE = 8; // magnet centre inset from each cell edge
-
-  const Wx = cols * PITCH; // outer footprint
-  const Wy = rows * PITCH;
-
-  // Filleted slab: centre it on the origin, then round the four vertical edges.
-  const slab = box(Wx, Wy, HEIGHT, { at: [0, 0, HEIGHT / 2] });
-  const plate = unwrap(fillet(slab, edgeFinder().inDirection('Z').findAll(slab), OUTER_R));
-
-  // One rounded rectangle profile on plane XY at height z, inset on every edge
-  // (the inset shrinks the corner radius with it so the chamfers stay concentric).
-  const rect = (inset: number, z: number) =>
-    drawRoundedRectangle(
-      CELL_TOP - 2 * inset,
-      CELL_TOP - 2 * inset,
-      Math.max(TOP_R - inset, 0.4),
-    ).sketchOnPlane('XY', z);
-
-  // The socket cutter for one cell: a downward loft from the wide rim, in to the
-  // top of the vertical wall, then in again to the narrow floor — the chamfered
-  // well a bin foot seats into. Carved from the top face, stopping short of the
-  // underside so the plate keeps a thin solid floor.
-  const wellCutter = () =>
-    rect(0, HEIGHT + 0.01).loftWith(
-      [rect(STEP_INSET, HEIGHT - FLOOR_DROP), rect(FLOOR_INSET, HEIGHT - WELL_DEPTH)],
-      { ruled: true },
-    );
-
-  const cutters = [];
-  for (let i = 0; i < cols; i++) {
-    for (let j = 0; j < rows; j++) {
-      const cx = (i - (cols - 1) / 2) * PITCH;
-      const cy = (j - (rows - 1) / 2) * PITCH;
-      cutters.push(translate(wellCutter(), [cx, cy, 0]));
-
-      // Four magnet pockets per cell, one toward each corner, bored from below.
-      const off = PITCH / 2 - HOLE_FROM_SIDE;
-      for (const sx of [-1, 1]) {
-        for (const sy of [-1, 1]) {
-          cutters.push(
-            cylinder(MAG_DIA / 2, MAG_DEPTH + 0.01, { at: [cx + sx * off, cy + sy * off, -0.01] }),
-          );
-        }
-      }
-    }
-  }
-
-  // Everything is a cut from the single filleted slab, so the result is one body.
-  return unwrap(cutAll(plate, cutters));
-}
-
-export default gridfinityBaseplate();`,
-  },
-  {
-    id: 'divided-gridfinity-bin',
-    label: 'Divided Gridfinity Bin (lite, compartments)',
-    description:
-      'A lite-base Gridfinity parts bin carved into a divx x divy field of compartments with rounded inner corners, chamfered floors, finger scoops, and a label tab.',
-    code: `import {
-  box,
-  cut,
-  cutAll,
-  cylinder,
-  edgeFinder,
-  fillet,
-  fuse,
-  unwrap,
-  validSolid,
-} from 'brepjs/quick';
-
-// Divided Gridfinity bin (lite, compartments): the printable parts-tray on the
-// 42 mm Gridfinity grid, hollowed to a "lite" thin-floor base and carved into a
-// divx x divy field of storage compartments. Each pocket gets rounded inner
-// corners, a chamfered floor, and a curved finger scoop along its back wall; the
-// front-left pocket also carries a sloped label tab to write on. A stacking lip
-// rims the top so filled bins nest. Bump cols/rows or divx/divy to resize.
-function dividedGridfinityBin({
-  cols = 2, // Gridfinity bases along X
-  rows = 2, // Gridfinity bases along Y
-  heightUnits = 6, // body height in 7 mm Gridfinity units
-  divx = 3, // compartment columns
-  divy = 2, // compartment rows
-} = {}) {
-  const PITCH = 42; // Gridfinity grid pitch (mm)
-  const CLR = 0.5; // total footprint clearance (0.25 mm per outer edge)
-  const WALL = 1.2; // outer wall thickness (mm)
-  const DIV = 1.6; // divider wall thickness between compartments (mm)
-  const FLOOR = 1.2; // lite thin base floor under the compartments (mm)
-  const FOOT_H = 4.75; // socket-foot stack height below z = 0 (mm)
-  const RAD = 3.75; // outer corner radius (mm)
-  const POCKET_R = 2.6; // compartment inner corner radius (mm)
-  const FLOOR_CH = 1.4; // chamfer easing the pocket floor (mm)
-
-  const H = heightUnits * 7; // bodies come in 7 mm units
-  const Wx = cols * PITCH - CLR; // outer footprint X
-  const Wy = rows * PITCH - CLR; // outer footprint Y
-
-  // --- Outer body: a rounded-corner block, floor at z = 0, walls full height ---
-  const blank = box(Wx, Wy, H, { at: [0, 0, H / 2] });
-  const body0 = unwrap(
-    fillet(blank, edgeFinder().inDirection('Z').findAll(blank), RAD),
-  );
-
-  // --- Socket feet: one chamfered pad per base cell, the profile that clicks
-  // onto a Gridfinity baseplate. Built as a stack of three rounded blocks that
-  // step inward going down, then welded under the body (top block overlaps the
-  // floor by 1 mm so it fuses solid rather than floating). ---
-  const cellW = PITCH - CLR; // one base footprint (41.5 mm)
-  // Stacked chamfer tiers as [width, zBottom, zTop]; consecutive tiers overlap
-  // in z so the foot welds into ONE solid, and the top tier rises above z = 0
-  // into the body so the whole pad fuses to the floor instead of floating.
-  const footTiers: [number, number, number][] = [
-    [cellW, -2.6, 1.0], // top landing, pokes 1 mm into the body
-    [cellW - 2.2, -4.0, -2.0], // mid taper tier (overlaps top by 0.6 mm)
-    [cellW - 4.8, -FOOT_H, -3.4], // bottom tier (overlaps mid by 0.6 mm)
-  ];
-  const footPad = (cx: number, cy: number) => {
-    let pad: ReturnType<typeof box> | undefined;
-    for (const [w, zB, zT] of footTiers) {
-      const h = zT - zB;
-      const blk = box(w, w, h, { at: [cx, cy, zB + h / 2] });
-      const tier = unwrap(
-        fillet(
-          blk,
-          edgeFinder().inDirection('Z').findAll(blk),
-          Math.min(RAD, w / 2 - 0.5),
-        ),
-      );
-      pad = pad ? unwrap(fuse(pad, tier)) : tier;
-    }
-    // pad is defined: footTiers is non-empty.
-    return pad as ReturnType<typeof box>;
-  };
-
-  let body = body0;
-  for (let i = 0; i < cols; i++) {
-    for (let j = 0; j < rows; j++) {
-      const cx = (i - (cols - 1) / 2) * PITCH;
-      const cy = (j - (rows - 1) / 2) * PITCH;
-      body = unwrap(fuse(body, footPad(cx, cy)));
-    }
-  }
-
-  // --- Stacking lip: a thin perimeter rim standing proud of the top rim so
-  // bins nest when stacked. Outer rounded block minus the inner cavity, its
-  // base sunk 2 mm into the body top for a real fuse overlap. ---
-  const lipH = 4.4; // lip height above the body top
-  const lipOuter = box(Wx, Wy, lipH + 2, { at: [0, 0, H - 2 + (lipH + 2) / 2] });
-  const lipOuterR = unwrap(
-    fillet(lipOuter, edgeFinder().inDirection('Z').findAll(lipOuter), RAD),
-  );
-  const lipBore = box(Wx - 2 * WALL, Wy - 2 * WALL, lipH + 4, {
-    at: [0, 0, H - 2 + (lipH + 4) / 2],
-  });
-  const lipBoreR = unwrap(
-    fillet(
-      lipBore,
-      edgeFinder().inDirection('Z').findAll(lipBore),
-      Math.max(RAD - WALL, 0.5),
-    ),
-  );
-  const lip = unwrap(cut(lipOuterR, lipBoreR));
-  body = unwrap(fuse(body, lip));
-
-  // --- Compartment field: carve a divx x divy grid of pockets into the body.
-  // The usable interior spans the footprint inset by the outer wall; pockets are
-  // separated by DIV-thick dividers and stop FLOOR above z = 0 (the lite base). ---
-  const innerX = Wx - 2 * WALL;
-  const innerY = Wy - 2 * WALL;
-  const cellPx = (innerX - (divx - 1) * DIV) / divx; // pocket footprint X
-  const cellPy = (innerY - (divy - 1) * DIV) / divy; // pocket footprint Y
-  const pocketTop = H + 1; // open above the rim so the cut breaks through
-  const pocketDepth = pocketTop - FLOOR; // floor of the pocket at z = FLOOR
-
-  const pocketCenter = (gi: number, gj: number): [number, number] => {
-    const x = -innerX / 2 + cellPx / 2 + gi * (cellPx + DIV);
-    const y = -innerY / 2 + cellPy / 2 + gj * (cellPy + DIV);
-    return [x, y];
-  };
-
-  // One rounded pocket cutter, opening upward from z = FLOOR.
-  const pocketCutter = (cx: number, cy: number) => {
-    const blk = box(cellPx, cellPy, pocketDepth, {
-      at: [cx, cy, FLOOR + pocketDepth / 2],
-    });
-    return unwrap(
-      fillet(
-        blk,
-        edgeFinder().inDirection('Z').findAll(blk),
-        Math.min(POCKET_R, cellPx / 2 - 0.5, cellPy / 2 - 0.5),
-      ),
-    );
-  };
-
-  const cutters = [];
-  for (let gi = 0; gi < divx; gi++) {
-    for (let gj = 0; gj < divy; gj++) {
-      const [cx, cy] = pocketCenter(gi, gj);
-      cutters.push(pocketCutter(cx, cy));
-
-      // Chamfered floor: a four-sided pyramidal frustum cut sunk at the pocket
-      // bottom so the floor-to-wall corners ease in (matches the printed bevel).
-      const chBlk = box(cellPx + 2 * FLOOR_CH, cellPy + 2 * FLOOR_CH, FLOOR_CH, {
-        at: [cx, cy, FLOOR + FLOOR_CH / 2],
-      });
-      const chamferEdges = edgeFinder().inDirection('Z').findAll(chBlk);
-      cutters.push(
-        unwrap(fillet(chBlk, chamferEdges, Math.min(POCKET_R, FLOOR_CH))),
-      );
-    }
-  }
-
-  // --- Finger scoop: a curved ramp swept along the back (+Y) wall of every
-  // back-row pocket, so contents slide up into your fingers. Modelled as a
-  // horizontal cylinder subtracted from the back-bottom corner of the pocket. ---
-  const scoopR = Math.min(cellPy * 0.55, pocketDepth * 0.9, 12);
-  for (let gi = 0; gi < divx; gi++) {
-    const [cx, cy] = pocketCenter(gi, divy - 1); // back row only
-    const yBack = cy + cellPy / 2; // back wall plane of this pocket
-    // Cylinder runs directly along X (axis) at the pocket back-floor corner. A
-    // rotate() with no 'at' pivots about the world origin and flings the scoop
-    // clear out of the pocket.
-    const scoop = cylinder(scoopR, cellPx, {
-      at: [cx - cellPx / 2, yBack, FLOOR + scoopR],
-      axis: [1, 0, 0],
-    });
-    cutters.push(scoop);
-  }
-
-  body = unwrap(cutAll(body, cutters));
-
-  // --- Label tab: a flat ledge overhanging the top of the front-left pocket's
-  // front (-Y) wall, the lip you write a label on. A thin slab fused onto the
-  // wall, reaching back over the pocket and overlapping the wall by DIV so it
-  // welds into one body. It sits just below the rim, never above it. ---
-  const [tx, ty] = pocketCenter(0, 0); // front-left pocket
-  const yFront = ty - cellPy / 2; // its front wall plane (inner face)
-  const tabW = Math.min(cellPx, 38); // tab width along X
-  const tabDepth = 11; // how far the ledge reaches into the pocket (mm)
-  const tabThk = 2.4; // tab plate thickness (mm)
-  const tabTop = H - 0.6; // top of the tab, kept under the rim
-  const tab = box(tabW, tabDepth + DIV, tabThk, {
-    at: [tx, yFront + (tabDepth - DIV) / 2, tabTop - tabThk / 2],
-  });
-  body = unwrap(fuse(body, tab));
-
-  // Return as a single ValidSolid body (connectivity verified downstream).
-  return unwrap(validSolid(body));
-}
-
-export default dividedGridfinityBin();`,
   },
   {
     id: 'wall-mount-flanged-junction-box',
