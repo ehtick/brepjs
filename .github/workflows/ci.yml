@@ -121,9 +121,12 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: ./.github/actions/setup
-      # The playground resolves `brepjs` via package exports → `dist/`. Build
-      # the library first so `tsc -b` and `vite build` see real type files.
+      # The playground resolves `brepjs` (and the brepjs-bim / brepjs-sheetmetal
+      # domain packages its worker imports) via package exports → `dist/`. Build
+      # the libraries first so `tsc -b` and `vite build` see real type/runtime files.
       - run: npm run build
+      - run: npm run build --workspace=brepjs-bim
+      - run: npm run build --workspace=brepjs-sheetmetal
       - run: npm run build --workspace=apps/playground
 
   packages-viewer:

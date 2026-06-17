@@ -19,11 +19,57 @@ function ambientToModuleBody(ambient: string): string {
     .replace(/^((?:\/\*\*[^*]*\*\/\s*)?)(?:declare\s+)?type(\s+\w+\b)/gm, '$1export type$2');
 }
 
-// Module specifiers the playground exposes to user code.
-const BREPJS_MODULE_IDS = ['brepjs', 'brepjs/quick'] as const;
-
-/** Wrap the ambient body as `declare module` blocks for each exposed specifier. */
-export function buildBrepjsModuleDts(ambient: string): string {
-  const body = ambientToModuleBody(ambient);
-  return BREPJS_MODULE_IDS.map((id) => `declare module '${id}' {\n${body}\n}\n`).join('');
+/** Ambient `.d.ts` text + the module specifier(s) it should be exposed under. */
+export interface AmbientPackage {
+  moduleIds: string[];
+  ambient: string;
 }
+
+/** Wrap each package's ambient body as `declare module` blocks. */
+export function buildModuleDts(packages: AmbientPackage[]): string {
+  return packages
+    .map(({ moduleIds, ambient }) => {
+      const body = ambientToModuleBody(ambient);
+      return moduleIds.map((id) => `declare module '${id}' {\n${body}\n}\n`).join('');
+    })
+    .join('');
+}
+
+/**
+ * Build the combined `declare module` blocks for every package the playground
+ * exposes: core `brepjs` (also under `brepjs/quick`), plus the satellite domain
+ * packages. Each satellite ambient keeps its `import type … from 'brepjs'` line,
+ * which resolves against the `brepjs` block emitted alongside it.
+ */
+export function buildBrepjsModuleDts(
+  brepjsAmbient: string,
+  sheetmetalAmbient: string,
+  bimAmbient: string
+): string {
+  return (
+    buildModuleDts([
+      { moduleIds: ['brepjs', 'brepjs/quick'], ambient: brepjsAmbient },
+      { moduleIds: ['brepjs-sheetmetal'], ambient: sheetmetalAmbient },
+      { moduleIds: ['brepjs-bim'], ambient: bimAmbient },
+    ]) + PLAYGROUND_MODULE_DTS
+  );
+}
+
+// Hand-written declarations for the playground-only `brepjs/playground` helpers
+// the worker injects at runtime (not part of any published package). Both return
+// the shape type so `export default color(...)` / `present(...)` stays typed as
+// the shape; the worker strips the wrapper before meshing.
+const PLAYGROUND_MODULE_DTS = `declare module 'brepjs/playground' {
+  /** Tag a shape with a CSS color the viewer applies to its mesh. */
+  export function color<T>(shape: T, value: string): T;
+  /** Downloadable artifacts an example attaches to its default export. */
+  export interface PresentArtifacts {
+    /** A DXF document (e.g. a sheet-metal flat pattern) offered for download. */
+    dxf?: string;
+    /** An IFC-SPF byte buffer offered for download. */
+    ifc?: Uint8Array;
+  }
+  /** Attach downloadable artifacts to the shown shape; enables the matching toolbar download. */
+  export function present<T>(shape: T, artifacts: PresentArtifacts): T;
+}
+`;
