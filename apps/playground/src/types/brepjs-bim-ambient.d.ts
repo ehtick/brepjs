@@ -160,7 +160,7 @@ interface BimTreeNode {
 interface BimTreeSummary {
     /** The project node and its nested spatial structure + contained elements. */
     readonly root: BimTreeNode | null;
-    /** Total number of elements in the model. */
+    /** Number of nodes in the tree (the project and everything reachable from it). */
     readonly elementCount: number;
 }
 
@@ -180,6 +180,14 @@ interface ValidatedIfcResult {
  * which serializes unconditionally).
  */
 declare function toIfcValidated(model: BimModel, meta: BimModelMeta): Promise<Result<ValidatedIfcResult, BimError>>;
+
+/**
+ * Override how web-ifc finds its `.wasm` file. Applied by every web-ifc entry
+ * point in this package — IFC export ({@link toIfc}), import ({@link fromIfc})
+ * and validation. Required when brepjs-bim is bundled into a worker that serves
+ * the wasm itself; not needed in Node.
+ */
+declare function setIfcWasmLocateFile(locate: ((path: string, prefix: string) => string) | undefined): void;
 
 interface FromIfcOptions {
     /** Activate web-ifc's large-coordinate recentering on open. Default false. */
