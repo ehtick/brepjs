@@ -31,7 +31,7 @@ export function usePlaygroundActions(): PlaygroundActions {
   const code = usePlaygroundStore((s) => s.code);
   const addToast = useToastStore((s) => s.addToast);
   const { runCode, exportSTL, exportSTEP, exportDXF, exportIFC, debouncedRun } = useCodeExecution();
-  const { updateUrl, copyShareUrl } = useUrlState();
+  const { updateUrl, copyShareUrl, buildShareUrl } = useUrlState();
   const handleScreenshot = useScreenshot();
   const resetViewerDefaults = useViewerStore((s) => s.resetViewerDefaults);
 
@@ -81,12 +81,32 @@ export function usePlaygroundActions(): PlaygroundActions {
     captureEvent('playground_export', { format: 'ifc' });
   }, [exportIFC, code, addToast]);
 
+  // On touch devices with the Web Share API, hand the permalink to the native
+  // share sheet (Messages / AirDrop / etc.); everywhere else fall back to the
+  // familiar copy-to-clipboard + toast. A dismissed share sheet rejects with
+  // AbortError, which we swallow.
   const handleShare = useCallback(() => {
-    void copyShareUrl(code);
-    addToast('Link copied to clipboard');
-    track('playground_share');
-    captureEvent('playground_share');
-  }, [copyShareUrl, code, addToast]);
+    const coarse = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+    if (coarse && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      const url = buildShareUrl(code);
+      void navigator
+        .share({ title: 'brepjs Playground', url })
+        // Only count a share once the sheet actually completes — a dismissed
+        // sheet rejects with AbortError and must not inflate the share metric.
+        .then(() => {
+          track('playground_share');
+          captureEvent('playground_share');
+        })
+        .catch(() => {
+          /* user dismissed the share sheet */
+        });
+    } else {
+      void copyShareUrl(code);
+      addToast('Link copied to clipboard');
+      track('playground_share');
+      captureEvent('playground_share');
+    }
+  }, [buildShareUrl, copyShareUrl, code, addToast]);
 
   const handleResetToDefault = useCallback(() => {
     usePlaygroundStore.getState().setCode(DEFAULT_CODE);
