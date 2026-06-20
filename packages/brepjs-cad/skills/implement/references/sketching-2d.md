@@ -25,7 +25,7 @@ export default () => {
 };
 ```
 
-**Obround / slot:** a corner radius of half the width gives fully-rounded (stadium) ends — `drawRoundedRectangle(length, width, width / 2)` — extrude and `cut` it through a plate for a rounded-end slot.
+**Obround / slot:** a corner radius of half the **shorter** side gives fully-rounded (stadium) ends — `drawRoundedRectangle(length, width, width / 2)` with `length > width` extrudes and `cut`s cleanly (the long-axis straight survives; only the short-side straight collapses, which _is_ the rounded end). The one degenerate case is a **square** obround: when `width === height` and `r === width / 2`, _both_ straight pairs collapse to zero and the all-arc profile `KERNEL_FAILED`s on extrude/`cut` (`drawRoundedRectangle` emits each straight side only while `r < that side / 2` — `src/2d/blueprints/cannedBlueprints.ts:84`). For a square rounded end nudge under: `width / 2 - 0.01`. Also keep `r` below half of **each** side — a radius past a half-dimension over-rounds and fails too.
 
 ## Revolving a profile
 
@@ -57,6 +57,7 @@ export default () => {
 ## Pitfalls
 
 - A `Drawing` is purely 2D; you must `.sketchOnPlane(...)` before `.extrude`.
+- **A non-XY sketch plane extrudes along its _signed_ normal, not toward the positive axis** (`src/core/planeOps.ts`): `XY`→+Z, `YZ`→+X, `ZX`→+Y, but **`XZ`→−Y**, `YX`→−Z, `ZY`→−X. So `draw(...).sketchOnPlane('XZ').extrude(L)` seats the body in `y ∈ [−L, 0]`, not `[0, L]` — then every +Y feature placement and `expected.bounds` misses by `L`. `translate(s, [0, L, 0])` to land it on a `y ∈ [0, L]` datum (or sketch on `ZX` for +Y), or measure-first and bound generously.
 - `.sketchOnPlane(...)` returns `SketchInterface | Sketches`. `.extrude(...)` works on the union, but `.face()` / `.sweepSketch()` do not; for a single profile that needs a face (revolve), use `polygon(points3D)` instead (see above) to stay `--check`-clean.
 - Low-level `circle`/`ellipse`/`line` (primitives) return **edges**, not faces; use the `draw*` factories when you need a closed profile to extrude.
 - **For an extruded regular polygon (hex prism, nut, etc.) use `drawPolysides(radius, sides).sketchOnPlane('XY', origin?).extrude(h)`.** Do **not** reach for `polygon(points3D).extrude(...)`: `polygon()` returns an `OrientedFace` (for `revolve`/a face), which has **no `.extrude()`** — `tsc` rejects it with `TS2339: Property 'extrude' does not exist on type '… face … oriented … planar'`.
