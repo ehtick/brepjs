@@ -15,7 +15,7 @@ node_modules
 dist/
 
 # Generated at build: bundled API reference copied from the repo-root llms*.txt
-packages/brepjs-verify/reference/
+packages/brepjs-cad/reference/
 
 # V8 profiling artifacts
 *.cpuprofile
@@ -66,3 +66,6 @@ docs/images/examples/
 # Local agent skill tooling (installed via `skills add`, not project source)
 .agents/
 .claude/skills/langfuse
+
+# verify-heal eval scratch fixtures
+packages/brepjs-cad/.verifyeval-*

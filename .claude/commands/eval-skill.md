@@ -1,17 +1,22 @@
 ---
-description: Run the brepjs-verify skill eval in this Claude session — re-author the playground examples from their descriptions, verify + render each, judge against the playground quality bar, emit the two-signal scorecard, and propose SKILL.md fixes. No API key, runs on the subscription.
-argument-hint: '[basics | mechanical | <example-id> | all]   (default: all plain-brepjs examples)'
+description: Run a brepjs-cad skill eval in this Claude session and propose fixes (no API key). `/eval-skill [target]`: implement (default — re-author the playground examples, verify/render/judge, two-signal scorecard) or verify (run the precision/recall harness). The measure-and-propose sibling of `/heal-skill`.
+argument-hint: '[target: implement | verify]  [scope]   (default: implement, all plain-brepjs examples)'
 ---
 
-# brepjs-verify skill eval (manual loop)
+# brepjs-cad skill eval (manual loop)
 
-Measure the deployed `SKILL.md` by re-authoring the **playground examples** — the quality
+For **`verify`**: run `npm run eval:verify -w brepjs-cad` (`bench/verifyEval.ts`) and report the
+precision/recall table + any false-positive or missed-code finding; propose a
+`skills/verify/SKILL.md` (or `HINT_TABLE`) fix. For **`implement`** (default), continue below.
+
+Measure the deployed implement skill by re-authoring the **playground examples** — the quality
 bar — from their descriptions through **this** Claude Code session: you author each part, and a
 **blind judge subagent** grades it (you never grade your own output — see `bench/blind-judge.md`).
 No API key, no billing. The point of this loop is not the
 score — it's the **findings**: each playground part the skill can't reproduce _as a
 designed object_ (not just a valid blob) is a concrete SKILL.md gap to close. (`npm run
-eval:live` is the billed SDK counterpart; it still uses the legacy `bench/prompts.ts`.)
+eval:live` is the billed SDK counterpart; it defaults to the playground corpus, `--corpus prompts`
+for the legacy `bench/prompts.ts`.)
 
 ## Inputs
 
@@ -27,7 +32,7 @@ eval:live` is the billed SDK counterpart; it still uses the legacy `bench/prompt
   side-by-side, adapt it to a `.brep.ts` — change `from 'brepjs/quick'` → `from 'brepjs'`
   and `export default <shape>` → `export default () => <shape>` — then `verify --check
 --snapshot`. The author's part should read as designed as the reference, not just valid.
-- **Authoring contract:** `packages/brepjs-verify/skill/SKILL.md` — follow it exactly;
+- **Authoring contract:** `packages/brepjs-cad/skills/implement/SKILL.md` — follow it exactly;
   that is the thing under test. Do **not** show the author the reference `code`, or lean on
   outside brepjs knowledge the skill doesn't give you, or you measure yourself.
 
@@ -37,9 +42,9 @@ The visual judge needs rendered snapshots → the built CLI + viewer + Chrome. B
 what's missing:
 
 1. Root library — `test -f dist/index.js || npm run build`
-2. Viewer — `test -d packages/brepjs-verify/viewer/dist || npm run build --workspace=brepjs-viewer`
-3. CLI — `test -f packages/brepjs-verify/dist/cli/main.js || npm run build --workspace=brepjs-verify`
-4. Chrome — `cd packages/brepjs-verify && npx puppeteer browsers install chrome`
+2. Viewer — `test -d packages/brepjs-cad/viewer/dist || npm run build --workspace=brepjs-viewer`
+3. CLI — `test -f packages/brepjs-cad/dist/cli/main.js || npm run build --workspace=brepjs-cad`
+4. Chrome — `cd packages/brepjs-cad && npx puppeteer browsers install chrome`
 
 If the viewer/Chrome can't be built, run **auto-only**: skip `--snapshot`, mark every
 `judge:—`, and say so loudly in the scorecard (a built-but-unjudged part is a coverage
@@ -51,13 +56,13 @@ Author parts into a scratch ESM dir so `import 'brepjs'` resolves and the kernel
 ## The loop — per selected example, ≤ 4 attempts (designed parts need the polish pass)
 
 1. **Brief.** Convert the example's `description` to explicit params (mm, datums, features)
-   per SKILL.md step 1. Read the closest `skill/examples/*.brep.ts` first. Do **not** read
+   per SKILL.md step 1. Read the closest `skills/implement/examples/*.brep.ts` first. Do **not** read
    the playground example's `code` — that's the answer key.
 2. **Author** `<id>.brep.ts` following SKILL.md: short API, `unwrap()` the `Result`-ops,
    `export default () => <shape>`. Snapshot **serially** (the render server is a singleton
    on port 7373; concurrent `--snapshot` runs error out).
 3. **Verify + render** (one spawn):
-   `node packages/brepjs-verify/dist/cli/main.js verify <id>.brep.ts --check --json <id>.report.json --snapshot <id>-shots/`
+   `node packages/brepjs-cad/dist/cli/main.js verify <id>.brep.ts --check --json <id>.report.json --snapshot <id>-shots/`
 4. **Auto signal** (objective): `auto.pass` is `ok === true` (a valid manifold solid /
    assembly). Playground descriptions rarely pin dims; if one does, check the bbox by
    **span/extent**, not absolute position (matches `checkAuto`).
@@ -100,13 +105,13 @@ repo-root `.env` as `LANGFUSE_HOST` / `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_K
 `LANGFUSE_BASE_URL`, so bridge first or it silently hits EU cloud:
 `set -a; . ./.env; set +a; export LANGFUSE_BASE_URL="${LANGFUSE_BASE_URL:-$LANGFUSE_HOST}"`.
 
-Once per corpus change, sync the dataset: `npm run eval:dataset:sync -w brepjs-verify` (upserts the
+Once per corpus change, sync the dataset: `npm run eval:dataset:sync -w brepjs-cad` (upserts the
 playground examples into the `brepjs-playground` dataset, keyed by example id).
 
 Write the scorecard as JSON matching `bench/score.ts` `Scorecard` — `{ model, brepjsVersion,
 skillVersion, date, results: EvalResult[] }`, where each result's `id` **is the playground example
 id** and carries `auto`, `judgePass`, and `firstTry` (so the lift is computed) — then push:
-`npm run eval:push -w brepjs-verify -- <scorecard.json>`. It records two things, both no-op without
+`npm run eval:push -w brepjs-cad -- <scorecard.json>`. It records two things, both no-op without
 keys: (1) one `eval-run` trace with the aggregate scores (`both`, `first_try_both`, `eventual_both`,
 `lift`), and (2) a dataset run on `brepjs-playground` — one trace per part, scored and linked to its
 dataset item — so skill versions compare per part in the dataset Runs view. The run name is the

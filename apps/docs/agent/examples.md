@@ -1,16 +1,16 @@
 ---
 title: Examples
-description: 'The few-shot gallery brepjs-verify ships: primitives, booleans, sketch-to-solid, modifiers, and gridfinity — each a complete .brep.ts with a measurement baseline.'
+description: 'The few-shot gallery brepjs-cad ships: primitives, booleans, sketch-to-solid, modifiers, and gridfinity — each a complete .brep.ts with a measurement baseline.'
 ---
 
 # Examples
 
-The skill ships a gallery of complete, verified parts under `skill/examples/<name>.brep.ts`, each paired with a `<name>.expected.json` baseline. They are the few-shot reference the agent reads before authoring, and the corpus the [deterministic eval](./eval) replays. Read the one closest to your task before writing a new part.
+The skill ships a gallery of complete, verified parts under `skills/implement/examples/<name>.brep.ts`, each paired with a `<name>.expected.json` baseline. They are the few-shot reference the agent reads before authoring, and the corpus the [deterministic eval](./eval) replays. Read the one closest to your task before writing a new part.
 
 Each example is a real `.brep.ts` you can run directly:
 
 ```bash
-npx -y brepjs-verify verify mounting-bracket.brep.ts --check --snapshot shots/
+npx -y -p brepjs-cad brep verify mounting-bracket.brep.ts --check --snapshot shots/
 ```
 
 ## Primitives + booleans
