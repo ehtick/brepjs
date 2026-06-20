@@ -71,6 +71,39 @@ function wasmAssets(): Plugin {
   };
 }
 
+// index.html references its favicons with root-absolute paths (`/favicon.ico`).
+// Vite rewrites those to `${base}favicon.ico` at build time — correct for
+// production, including deep `/playground/examples/<id>` permalinks — but the dev
+// server doesn't rewrite them, and browsers also probe `/favicon.ico` at the
+// origin root regardless. Serve those image files at root during dev to match
+// production's behaviour.
+//
+// site.webmanifest is deliberately NOT served here: it's reached via the
+// base-rewritten `<link rel="manifest">` (`/playground/site.webmanifest`), and
+// its icon `src`s are relative to the manifest URL — serving it from root would
+// make those resolve to `/icon-*.png` (404) instead of `/playground/icon-*.png`.
+function devRootIcons(): Plugin {
+  const publicDir = fileURLToPath(new URL('./public', import.meta.url));
+  const types: Record<string, string> = {
+    '/favicon.ico': 'image/x-icon',
+    '/favicon.svg': 'image/svg+xml',
+    '/apple-touch-icon.png': 'image/png',
+  };
+  return {
+    name: 'dev-root-icons',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const type = req.url && types[req.url];
+        const filePath = req.url && resolve(publicDir, req.url.slice(1));
+        if (!type || !filePath || !existsSync(filePath)) return next();
+        res.setHeader('Content-Type', type);
+        createReadStream(filePath).pipe(res);
+      });
+    },
+  };
+}
+
 export default defineConfig({
   base: BASE,
   define: {
@@ -78,7 +111,7 @@ export default defineConfig({
     // brepjs version in bug reports without needing devtools.
     __BREPJS_VERSION__: JSON.stringify(BREPJS_VERSION),
   },
-  plugins: [react(), tailwindcss(), wasmAssets()],
+  plugins: [react(), tailwindcss(), wasmAssets(), devRootIcons()],
   server: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
