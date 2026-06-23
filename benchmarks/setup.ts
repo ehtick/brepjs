@@ -24,16 +24,53 @@ export function hasBrepkit(): boolean {
  *
  * Reads `BENCH_KERNELS` env var:
  * - `'all'` or `'both'` → initialise all available kernels
- * - otherwise → treat as a kernel id (defaults to `'occt'`)
+ * - a comma-separated list (e.g. `'occt,brepkit'`) → initialise just those
+ * - otherwise → treat as a single kernel id (defaults to `'occt'`)
  *
  * Keeps `npm run bench` fast (OCCT-only by default).
  */
 export async function initBenchKernels(): Promise<void> {
-  const mode = process.env['BENCH_KERNELS'] ?? 'occt';
+  const mode = (process.env['BENCH_KERNELS'] ?? 'occt').trim();
   if (mode === 'all' || mode === 'both') {
     await initAllKernels();
-  } else {
-    await initKernel(mode);
+    return;
+  }
+
+  const ids = [...new Set(mode.split(',').map((s) => s.trim()).filter(Boolean))];
+  if (ids.length === 0) {
+    throw new Error(
+      'BENCH_KERNELS is empty — set a kernel id, a comma-separated list, or "all"/"both".'
+    );
+  }
+  if (ids.length === 1) {
+    // Single kernel: surface a typo loudly rather than silently running nothing.
+    await initKernel(ids[0]!); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+    return;
+  }
+  // Subset: skip unavailable optional kernels, matching initAllKernels.
+  for (const id of ids) {
+    try {
+      await initKernel(id);
+    } catch {
+      console.warn(`[kernel-init] ${id} not available — skipping`);
+    }
+  }
+  // Base the guard on what actually registered, not on whether init threw:
+  // initKernel can return early after a failed first attempt, so a "did not
+  // throw" count would be misleading. Fail loudly instead of producing an
+  // empty report at exit 0.
+  const ready = ids.filter((id) => getAvailableKernels().includes(id));
+  if (ready.length === 0) {
+    throw new Error(
+      `BENCH_KERNELS subset [${ids.join(', ')}] initialized no kernels — all were unavailable.`
+    );
+  }
+  // The report's "vs occt" column needs the native occt baseline; warn when a
+  // subset omits it so the empty comparison column isn't a surprise.
+  if (!ready.includes('occt')) {
+    console.warn(
+      '[kernel-init] subset has no "occt" baseline — the report\'s "vs occt" column will be empty.'
+    );
   }
 }
 

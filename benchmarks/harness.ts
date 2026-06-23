@@ -266,12 +266,19 @@ export interface ReportSection {
 }
 
 function speedupText(baselineMedian: number, compareMedian: number): string {
+  if (compareMedian === 0 && baselineMedian === 0) return '≈ same';
   if (compareMedian === 0) return '**>100x faster**';
+  if (baselineMedian === 0) return '**>100x SLOWER**';
   const ratio = baselineMedian / compareMedian;
   if (ratio >= 1) {
+    // Within rounding of parity — don't flag measurement noise as a speedup.
+    if (ratio.toFixed(1) === '1.0') return '≈ same';
     return `**${ratio.toFixed(1)}x faster**`;
   }
+  // Check the displayed slowdown multiplier, not the raw ratio, so a real
+  // sub-10% slowdown isn't rounded away into "≈ same".
   const inverse = 1 / ratio;
+  if (inverse.toFixed(1) === '1.0') return '≈ same';
   return `**${inverse.toFixed(1)}x SLOWER**`;
 }
 
@@ -319,7 +326,12 @@ export function generateReport(
 
     for (const [_baseName, group] of groups) {
       const occtResult = group.get('occt');
-      for (const kid of KERNEL_ORDER) {
+      // Known kernels first (stable display order), then any other kernel that
+      // produced results (e.g. one selected via a subset but absent from
+      // KERNEL_ORDER) so a kernel that actually ran is never dropped silently.
+      const known = KERNEL_ORDER.filter((kid) => group.has(kid));
+      const extra = [...group.keys()].filter((kid) => !KERNEL_ORDER.includes(kid));
+      for (const kid of [...known, ...extra]) {
         const r = group.get(kid);
         if (!r) continue;
         const speedup =
