@@ -13,6 +13,10 @@ Five composable, individually-improvable skills — **`brepjs:brainstorm`** (sco
 /plugin install brepjs@brepjs
 ```
 
+Or non-interactively from a terminal: `claude plugin marketplace add andymai/brepjs && claude plugin install brepjs@brepjs`.
+
+Then ask for a part in plain English and Claude reaches for the pipeline on its own, or drive it explicitly: `/brepjs:cad "a wall bracket for a 40 mm pipe with two M4 holes"` runs the full gated pipeline; `/brepjs:brainstorm` … `/brepjs:polish` run a single phase.
+
 ## 2. The runtime (npm)
 
 The CLI the skill invokes. Install it in **your** project, where `brepjs` + the WASM kernel resolve (Node module resolution is project-local, so the runtime can't live in the plugin dir):
