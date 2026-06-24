@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { MeshData, FaceGroup } from './types.js';
+import type { MeshData, FaceGroup, ViewMode } from './types.js';
 
 export function buildGeometry(data: MeshData): THREE.BufferGeometry {
   const geo = new THREE.BufferGeometry();
@@ -7,6 +7,87 @@ export function buildGeometry(data: MeshData): THREE.BufferGeometry {
   geo.setAttribute('normal', new THREE.BufferAttribute(data.normal, 3));
   geo.setIndex(new THREE.BufferAttribute(data.index, 1));
   return geo;
+}
+
+/** A per-instance transform: a THREE.Matrix4 or a brepjs row-major 4x4. */
+export type InstancePlacement = THREE.Matrix4 | ReadonlyArray<ReadonlyArray<number>>;
+
+/**
+ * Convert a brepjs row-major 4x4 (`[[row0],[row1],[row2],[row3]]`, as returned
+ * by brepjs `instancedMesh().instances`) to a THREE.Matrix4. THREE.Matrix4.set
+ * is row-major, so the rows map directly.
+ */
+export function instanceMatrix(m: ReadonlyArray<ReadonlyArray<number>>): THREE.Matrix4 {
+  const r0 = m[0] as readonly number[];
+  const r1 = m[1] as readonly number[];
+  const r2 = m[2] as readonly number[];
+  const r3 = m[3] as readonly number[];
+  // prettier-ignore
+  return new THREE.Matrix4().set(
+    r0[0] as number, r0[1] as number, r0[2] as number, r0[3] as number,
+    r1[0] as number, r1[1] as number, r1[2] as number, r1[3] as number,
+    r2[0] as number, r2[1] as number, r2[2] as number, r2[3] as number,
+    r3[0] as number, r3[1] as number, r3[2] as number, r3[3] as number,
+  );
+}
+
+export interface InstancedMeshOptions {
+  /** Material color (defaults to data.color, then the viewer's neutral grey). */
+  color?: string;
+  /** Render mode, mirroring Renderer: 'solid' (default) | 'wireframe' | 'xray'. */
+  viewMode?: ViewMode;
+  /** Section clipping planes, as built by `sectionPlane`. */
+  clippingPlanes?: THREE.Plane[] | null;
+}
+
+/**
+ * Build a THREE.InstancedMesh from one source mesh (meshed once) plus N
+ * per-instance transforms — the "one tessellation, N placements" render of a
+ * brepjs `instancedMesh()` payload, so a 10x10 grid is a single GPU draw.
+ *
+ * `data` is the source as viewer MeshData — convert a brepjs `ShapeMesh`
+ * (vertices/normals/triangles) the same way you already do for `Renderer`.
+ * `placements` is `instancedMesh().instances` (THREE.Matrix4 or brepjs row-major
+ * 4x4). The material mirrors `Renderer` (color/modes/clipping).
+ *
+ * The caller owns the returned mesh: dispose its geometry + material on unmount.
+ */
+export function buildInstancedMesh(
+  data: MeshData,
+  placements: ReadonlyArray<InstancePlacement>,
+  opts: InstancedMeshOptions = {},
+): THREE.InstancedMesh {
+  const geometry = buildGeometry(data);
+  const color = opts.color ?? data.color ?? '#d4d8dc';
+  const viewMode = opts.viewMode ?? 'solid';
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    metalness: 0,
+    roughness: 0.45,
+    emissive: new THREE.Color(color),
+    emissiveIntensity: 0.08,
+    side: viewMode === 'solid' ? THREE.FrontSide : THREE.DoubleSide,
+    wireframe: viewMode === 'wireframe',
+    transparent: viewMode === 'xray',
+    opacity: viewMode === 'xray' ? 0.35 : 1,
+    depthWrite: viewMode !== 'xray',
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
+    clippingPlanes: opts.clippingPlanes ?? null,
+  });
+  const mesh = new THREE.InstancedMesh(geometry, material, placements.length);
+  for (let i = 0; i < placements.length; i++) {
+    const p = placements[i];
+    if (p === undefined) continue;
+    mesh.setMatrixAt(i, p instanceof THREE.Matrix4 ? p : instanceMatrix(p));
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  // InstancedMesh keeps its own bounds for frustum culling / raycasting, and
+  // setMatrixAt doesn't update them — recompute over the instance matrices so
+  // a grid translated far from the source mesh isn't wrongly culled.
+  mesh.computeBoundingSphere();
+  return mesh;
 }
 
 export interface MeshBounds {
