@@ -10,6 +10,9 @@ import type {
   DisposeRequest,
   WorkerResponse,
   ErrorResponse,
+  BatchRequest,
+  BatchOperation,
+  BatchItemResult,
 } from './protocol.js';
 import { isSuccessResponse } from './protocol.js';
 
@@ -39,6 +42,12 @@ export interface WorkerClient {
     shapesBrep: string[],
     params: Record<string, unknown>
   ): Promise<WorkerResult>;
+  /**
+   * Run several operations in a single message. Resolves with one result per
+   * operation, in order; a failing op yields `{ success: false, error }` rather
+   * than rejecting the whole batch (unlike a worker pool's `executeBatch`).
+   */
+  executeBatch(operations: ReadonlyArray<BatchOperation>): Promise<BatchItemResult[]>;
   /** Dispose the client, rejecting all pending operations. */
   dispose(): void;
 }
@@ -111,6 +120,25 @@ export function createWorkerClient(options: WorkerClientOptions): WorkerClient {
         parameters: params,
       };
       return send(msg);
+    },
+
+    executeBatch(operations: ReadonlyArray<BatchOperation>): Promise<BatchItemResult[]> {
+      // Snapshot the count now: postMessage structured-clones the batch, but the
+      // caller's array could be mutated before the response lands, which would
+      // make a length check against the live array reject a valid reply.
+      const expected = operations.length;
+      const msg: BatchRequest = { id: nextId(), type: 'batch', operations };
+      return send(msg).then((result) => {
+        // A correct batch reply carries one result per op in resultData. Reject
+        // anything else (an un-upgraded worker, a single-op shape, or a malformed
+        // response) rather than silently dropping operations or handing the
+        // caller a non-array to map over.
+        const data = result.resultData;
+        if (!Array.isArray(data) || data.length !== expected) {
+          throw new Error(`Invalid batch response: expected ${expected} results`);
+        }
+        return data as BatchItemResult[];
+      });
     },
 
     dispose(): void {
