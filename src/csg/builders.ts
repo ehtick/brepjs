@@ -15,6 +15,7 @@ import {
   fnvMixBool,
   fnvMixInt32,
 } from './hash.js';
+import type { Matrix4x4 } from '@/core/types.js';
 import type {
   BoxNode,
   SphereNode,
@@ -36,6 +37,7 @@ import type {
   ScaleNode,
   MirrorNode,
   CompoundNode,
+  InstanceNode,
   IRNode,
   EmptyOutputKind,
   SolidNode,
@@ -345,6 +347,28 @@ export function compound(children: ReadonlyArray<IRNode>): CompoundNode {
   let h = fnvMixInt32(startHash('Compound'), children.length);
   for (const c of children) h = mix(h, c);
   return { kind: 'Compound', children, structuralHash: h, freeParams: depsOf(...children) };
+}
+
+export function instance(
+  source: IRNode,
+  placements: ReadonlyArray<Matrix4x4>,
+  fuse = false
+): InstanceNode {
+  // Copy matrices so later caller mutation can't desync geometry from the
+  // pre-computed structuralHash.
+  const copied = placements.map((m) => m.map((row) => [...row]) as Matrix4x4);
+  let h = fnvMixInt32(fnvMixBool(mix(startHash('Instance'), source), fuse), copied.length);
+  for (const m of copied) {
+    for (const v of m.flat()) h = fnvMixNumber(h, v);
+  }
+  return {
+    kind: 'Instance',
+    source,
+    placements: copied,
+    fuse,
+    structuralHash: h,
+    freeParams: depsOf(source),
+  };
 }
 
 // Re-export type aliases for downstream callers.
