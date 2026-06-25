@@ -55,70 +55,115 @@ interface MutableNode {
   text: string;
 }
 
-function parseAttrs(raw: string): Record<string, string> {
-  const attrs: Record<string, string> = {};
-  const attrRe = /([\w:.-]+)\s*=\s*"([^"]*)"/g;
-  let m: RegExpExecArray | null;
-  while ((m = attrRe.exec(raw)) !== null) {
-    const key = m[1];
-    const val = m[2];
-    if (key !== undefined && val !== undefined) attrs[key] = unescapeXml(val);
-  }
-  return attrs;
+function isNameChar(c: string): boolean {
+  return /[\w:.-]/.test(c);
+}
+
+function isWhitespace(c: string): boolean {
+  return /\s/.test(c);
 }
 
 /**
- * Parse an XML string into a tree. Tolerant of the XML declaration, comments,
- * whitespace, self-closing tags, and CDATA-free text. Throws on malformed
- * structure (unbalanced tags); callers wrap this in a `Result`.
+ * Parse an XML string into a tree. Tolerant of the XML declaration, processing
+ * instructions, comments, whitespace, self-closing tags, and CDATA-free text.
+ * Throws on malformed or unbalanced structure; callers wrap this in a `Result`.
+ *
+ * This is a hand-written cursor scan rather than a single tokenizing regex: the
+ * input is an untrusted `.bcfzip` payload, and a backtracking regex over
+ * uncontrolled data is a polynomial-ReDoS vector. Every construct here is
+ * consumed by an `indexOf` or a single-character advance, so the parse is linear
+ * in the input length. The sibling `ids/idsXml.ts` parser scans the same way.
  */
 export function parseXml(xml: string): XmlNode {
-  const tokenRe = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<\/([\w:.-]+)\s*>|<([\w:.-]+)((?:\s+[\w:.-]+\s*=\s*"[^"]*")*)\s*(\/?)>|([^<]+)/g;
   const root: MutableNode = { tag: '#root', attrs: {}, children: [], text: '' };
   const stack: MutableNode[] = [root];
+  const len = xml.length;
+  let i = 0;
 
-  let m: RegExpExecArray | null;
-  while ((m = tokenRe.exec(xml)) !== null) {
-    const [full, closeTag, openTag, attrsRaw, selfClose, textRun] = m;
+  const fail = (msg: string): never => {
+    throw new Error(`Malformed XML: ${msg} at offset ${String(i)}`);
+  };
+  const skipWhitespace = (): void => {
+    while (i < len && isWhitespace(xml.charAt(i))) i += 1;
+  };
+  const readName = (): string => {
+    const start = i;
+    while (i < len && isNameChar(xml.charAt(i))) i += 1;
+    return xml.slice(start, i);
+  };
+  const readAttrs = (): Record<string, string> => {
+    const attrs: Record<string, string> = {};
+    for (;;) {
+      skipWhitespace();
+      const c = xml.charAt(i);
+      if (i >= len || c === '>' || c === '/') return attrs;
+      const name = readName();
+      if (name.length === 0) fail('expected attribute name');
+      skipWhitespace();
+      if (xml.charAt(i) !== '=') fail(`expected '=' after attribute "${name}"`);
+      i += 1;
+      skipWhitespace();
+      if (xml.charAt(i) !== '"') fail(`expected '"' opening attribute "${name}"`);
+      i += 1;
+      const end = xml.indexOf('"', i);
+      if (end === -1) fail(`unterminated value for attribute "${name}"`);
+      attrs[name] = unescapeXml(xml.slice(i, end));
+      i = end + 1;
+    }
+  };
 
-    if (full.startsWith('<!--') || full.startsWith('<?')) continue;
-
-    if (closeTag !== undefined) {
+  while (i < len) {
+    if (xml.startsWith('<!--', i)) {
+      const end = xml.indexOf('-->', i + 4);
+      if (end === -1) fail('unterminated comment');
+      i = end + 3;
+    } else if (xml.startsWith('<?', i)) {
+      const end = xml.indexOf('?>', i + 2);
+      if (end === -1) fail('unterminated processing instruction');
+      i = end + 2;
+    } else if (xml.startsWith('</', i)) {
+      i += 2;
+      const name = readName();
+      skipWhitespace();
+      if (xml.charAt(i) !== '>') fail(`expected '>' closing </${name}>`);
+      i += 1;
       const top = stack[stack.length - 1];
-      if (top === undefined || top.tag !== closeTag) {
-        throw new Error(`Unbalanced XML: unexpected </${closeTag}>`);
+      if (top === undefined || top.tag !== name) {
+        throw new Error(`Unbalanced XML: unexpected </${name}>`);
       }
       stack.pop();
-      continue;
-    }
-
-    if (openTag !== undefined) {
-      const node: MutableNode = {
-        tag: openTag,
-        attrs: parseAttrs(attrsRaw ?? ''),
-        children: [],
-        text: '',
-      };
+    } else if (xml.charAt(i) === '<') {
+      i += 1;
+      const tag = readName();
+      if (tag.length === 0) fail('expected element name');
+      const node: MutableNode = { tag, attrs: readAttrs(), children: [], text: '' };
       const parent = stack[stack.length - 1];
       if (parent === undefined) throw new Error('Unbalanced XML: empty stack');
       parent.children.push(node);
-      if (selfClose !== '/') stack.push(node);
-      continue;
-    }
-
-    if (textRun !== undefined) {
-      const decoded = unescapeXml(textRun);
+      skipWhitespace();
+      if (xml.startsWith('/>', i)) {
+        i += 2;
+      } else if (xml.charAt(i) === '>') {
+        i += 1;
+        stack.push(node);
+      } else {
+        fail(`expected '>' in <${tag}>`);
+      }
+    } else {
+      const next = xml.indexOf('<', i);
+      const end = next === -1 ? len : next;
+      const decoded = unescapeXml(xml.slice(i, end));
       if (decoded.trim().length > 0) {
         const top = stack[stack.length - 1];
         if (top !== undefined) top.text += decoded;
       }
+      i = end;
     }
   }
 
   if (stack.length !== 1) {
     throw new Error('Unbalanced XML: unclosed elements remain');
   }
-
   const top = root.children[0];
   if (top === undefined) throw new Error('Empty XML document');
   return freezeNode(top);
