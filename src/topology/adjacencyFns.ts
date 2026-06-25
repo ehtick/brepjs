@@ -91,6 +91,40 @@ function getEdgeToFacesMap(parent: AnyShape<Dimension>): Map<number, EdgeFaceEnt
   return edgeToFaces;
 }
 
+/** Vertex-face pair stored in the adjacency map. */
+interface VertexFaceEntry {
+  readonly vertex: KernelShape;
+  readonly face: KernelShape;
+}
+
+/**
+ * Build or retrieve the cached vertex→faces adjacency map for a parent shape —
+ * the vertex analogue of {@link getEdgeToFacesMap}.
+ */
+function getVertexToFacesMap(parent: AnyShape<Dimension>): Map<number, VertexFaceEntry[]> {
+  const cache = getOrCreateCache(parent);
+  if (cache.vertexToFaces) return cache.vertexToFaces;
+
+  const kernel = getKernel();
+  const vertexToFaces = new Map<number, VertexFaceEntry[]>();
+  for (const f of kernel.iterShapes(parent.wrapped, 'face')) {
+    for (const v of kernel.iterShapes(f, 'vertex')) {
+      const hash = kernel.hashCode(v, HASH_CODE_MAX);
+      let bucket = vertexToFaces.get(hash);
+      if (!bucket) {
+        bucket = [];
+        vertexToFaces.set(hash, bucket);
+      }
+      if (!bucket.some((entry) => kernel.isSame(entry.vertex, v) && kernel.isSame(entry.face, f))) {
+        bucket.push({ vertex: v, face: f });
+      }
+    }
+  }
+
+  cache.vertexToFaces = vertexToFaces;
+  return vertexToFaces;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -132,6 +166,41 @@ export function facesOfEdge<D extends Dimension>(parent: AnyShape<D>, edge: Edge
 }
 
 /**
+ * Get all faces meeting at a vertex (≥3 for a solid corner, fewer on a
+ * boundary), via the cached vertex→faces map. The vertex equivalent of
+ * {@link facesOfEdge}, with the same hash-bucket + isSame verification.
+ *
+ * @param parent - The parent shape to search within.
+ * @param vertex - The vertex whose adjacent faces to find.
+ */
+export function facesOfVertex<D extends Dimension>(
+  parent: AnyShape<D>,
+  vertex: Vertex<D>
+): Face<D>[] {
+  const kernel = getKernel();
+  const vertexToFaces = getVertexToFacesMap(parent);
+  const hash = kernel.hashCode(vertex.wrapped, HASH_CODE_MAX);
+  const bucket = vertexToFaces.get(hash) ?? [];
+
+  const results: KernelShape[] = [];
+  const seen = new Map<number, KernelShape[]>();
+  for (const entry of bucket) {
+    if (!kernel.isSame(entry.vertex, vertex.wrapped)) continue;
+    const fHash = kernel.hashCode(entry.face, HASH_CODE_MAX);
+    const fBucket = seen.get(fHash);
+    if (!fBucket) {
+      seen.set(fHash, [entry.face]);
+      results.push(entry.face);
+    } else if (!fBucket.some((r) => kernel.isSame(r, entry.face))) {
+      fBucket.push(entry.face);
+      results.push(entry.face);
+    }
+  }
+
+  return wrapAll<Face<D>>(results, 'face');
+}
+
+/**
  * Get all edges bounding a face.
  *
  * @param face - The face whose edges to enumerate.
@@ -139,6 +208,15 @@ export function facesOfEdge<D extends Dimension>(parent: AnyShape<D>, edge: Edge
  */
 export function edgesOfFace<D extends Dimension>(face: Face<D>): Edge<D>[] {
   return deduplicatedSubShapes<Edge<D>>(face.wrapped, 'edge');
+}
+
+/**
+ * Get all vertices of a face. The vertex equivalent of {@link edgesOfFace}.
+ *
+ * @param face - The face whose vertices to enumerate.
+ */
+export function verticesOfFace<D extends Dimension>(face: Face<D>): Vertex<D>[] {
+  return deduplicatedSubShapes<Vertex<D>>(face.wrapped, 'vertex');
 }
 
 /**

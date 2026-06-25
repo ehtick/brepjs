@@ -8,12 +8,13 @@
  * never touches the kernel's unreliable `generated`-face hashes.
  */
 
-import type { Edge, Face, Shape3D, Vertex } from '@/core/shapeTypes.js';
+import type { Edge, Shape3D, Vertex } from '@/core/shapeTypes.js';
 import type { Vec3 } from '@/core/types.js';
-import { getFaces, vertexPosition } from '@/topology/topologyQueryFns.js';
+import { vertexPosition } from '@/topology/topologyQueryFns.js';
 import { getHashCode } from '@/topology/shapeFns.js';
 import { facesOfEdge, sharedEdges, verticesOfEdge } from '@/topology/adjacencyFns.js';
 import { measureLength } from '@/measurement/measureFns.js';
+import { distance, facesForRole, roleOfFace } from './roleLookup.js';
 import type {
   EdgeHint,
   EdgeRef,
@@ -42,13 +43,6 @@ function endpointMidpoint(verts: readonly Vertex[]): Vec3 | undefined {
   return [x / n, y / n, z / n];
 }
 
-function distance(a: Vec3, b: Vec3): number {
-  const dx = a[0] - b[0];
-  const dy = a[1] - b[1];
-  const dz = a[2] - b[2];
-  return Math.sqrt(dx * dx + dy * dy + dz * dz);
-}
-
 function captureEdgeHint(edge: Edge): EdgeHint {
   const lengthResult = measureLength(edge);
   return {
@@ -56,28 +50,6 @@ function captureEdgeHint(edge: Edge): EdgeHint {
     length: lengthResult.ok ? lengthResult.value : undefined,
     midpoint: endpointMidpoint(verticesOfEdge(edge)),
   };
-}
-
-// ---------------------------------------------------------------------------
-// Role lookups
-// ---------------------------------------------------------------------------
-
-/** Reverse the role table: the role whose tracked hashes include this face. */
-function roleOfFace(face: Face, origin: string, roles: RoleTable): string | undefined {
-  const originRoles = roles.get(origin);
-  if (!originRoles) return undefined;
-  const hash = getHashCode(face);
-  for (const [role, hashes] of originRoles) {
-    if (hashes.includes(hash)) return role;
-  }
-  return undefined;
-}
-
-/** Current faces a role resolves to (its tracked successors present in `shape`). */
-function facesForRole(shape: Shape3D, origin: string, role: string, roles: RoleTable): Face[] {
-  const hashes = roles.get(origin)?.get(role);
-  if (hashes === undefined || hashes.length === 0) return [];
-  return getFaces(shape).filter((f) => hashes.includes(getHashCode(f)));
 }
 
 function dedupeEdges(edges: readonly Edge[]): Edge[] {
