@@ -11,9 +11,12 @@ import { getActiveKernelId, withKernel } from '@/kernel/index.js';
 import { qualityDeflection } from '@/kernel/quality.js';
 import { ok, type Result } from '@/core/result.js';
 import type { AnyShape, Dimension } from '@/core/shapeTypes.js';
+import type { Vec3 } from '@/utils/vec3.js';
+import { getFaces } from '@/topology/topologyQueryFns.js';
+import { getHashCode } from '@/topology/shapeFns.js';
 import { mesh, type ShapeMesh, type MeshOptions } from '@/topology/meshFns.js';
 import { buildMeshCacheKey } from '@/topology/meshCache.js';
-import { projectEnv, type Env, type ExprValue } from './expressions.js';
+import { evalVec3, projectEnv, type Env, type ExprValue } from './expressions.js';
 import { fnvInit, fnvMixString, fnvMixNumber, fnvMixBool, fnvMixInt32, toHex } from './hash.js';
 import type { IRNode } from './types.js';
 import type { EvalContext } from './evaluators/context.js';
@@ -167,6 +170,70 @@ function cacheKey(node: IRNode, env: Env, kernelId: string, tolerance: number | 
   return `${toHex(node.structuralHash)}:${kernelId}:${toHex(projHash)}:${tolHash}`;
 }
 
+/**
+ * Peel outer Translate nodes off `node`, accumulating their env-evaluated
+ * offsets. Pure translations compose by addition, so the inner geometry is
+ * placement-independent: it meshes once and the cached mesh is shifted per
+ * placement instead of re-tessellating. Stops at the first non-Translate node
+ * (or one whose offset can't be evaluated in `env`).
+ */
+function peelTranslate(node: IRNode, env: Env): { inner: IRNode; offset: Vec3 } {
+  let inner = node;
+  let ox = 0;
+  let oy = 0;
+  let oz = 0;
+  while (inner.kind === 'Translate') {
+    const v = evalVec3(inner.vector, env, 'evaluateMesh.peelTranslate');
+    if (!v.ok) break;
+    ox += v.value[0];
+    oy += v.value[1];
+    oz += v.value[2];
+    inner = inner.target;
+  }
+  return { inner, offset: [ox, oy, oz] };
+}
+
+/** Shift every vertex of a mesh by `offset`; normals, UVs and triangles are unchanged. */
+function translateMesh(m: ShapeMesh, offset: Vec3): ShapeMesh {
+  const [dx, dy, dz] = offset;
+  if (dx === 0 && dy === 0 && dz === 0) return m;
+  const vertices = new Float32Array(m.vertices.length);
+  for (let i = 0; i < m.vertices.length; i += 3) {
+    vertices[i] = (m.vertices[i] ?? 0) + dx;
+    vertices[i + 1] = (m.vertices[i + 1] ?? 0) + dy;
+    vertices[i + 2] = (m.vertices[i + 2] ?? 0) + dz;
+  }
+  return { ...m, vertices };
+}
+
+/**
+ * Re-key a reused inner mesh's face groups onto the PLACED shape. `locate` gives
+ * moved faces location-dependent hashes, so the inner mesh's `faceId`s describe
+ * the *unplaced* shape; remap them to the placed faces (1:1 by iteration order,
+ * since `locate` shares the source TShape) so face picking and metadata lookup
+ * resolve against the placed mesh. Origins are translation-invariant, so only
+ * `faceId` changes.
+ *
+ * Takes pre-captured hash arrays (not shapes): a bounded shape cache can evict
+ * and dispose one shape while the other is being evaluated, so the caller reads
+ * each shape's face hashes immediately after evaluating it, never holding a
+ * shape handle across the next `evaluate`.
+ */
+function relocateFaceGroups(
+  faceGroups: ShapeMesh['faceGroups'],
+  innerHashes: readonly number[],
+  placedHashes: readonly number[]
+): ShapeMesh['faceGroups'] {
+  const remap = new Map<number, number>();
+  const n = Math.min(innerHashes.length, placedHashes.length);
+  for (let i = 0; i < n; i++) {
+    const a = innerHashes[i];
+    const b = placedHashes[i];
+    if (a !== undefined && b !== undefined) remap.set(a, b);
+  }
+  return faceGroups.map((g) => ({ ...g, faceId: remap.get(g.faceId) ?? g.faceId }));
+}
+
 // ---------------------------------------------------------------------------
 // Evaluator
 // ---------------------------------------------------------------------------
@@ -309,6 +376,41 @@ export class Evaluator implements Disposable {
           this.meshCache.set(meshKey, cached);
         }
         return ok(cached);
+      }
+
+      // Placement-stripped reuse: a pure-translation chain meshes its inner
+      // geometry once (shared across every placement) and shifts the cached mesh
+      // per move, instead of re-tessellating the relocated shape. The placed
+      // shape is still materialized (an O(1) locate) so face groups can be
+      // re-keyed onto its faces; only the expensive tessellation is skipped.
+      const { inner, offset } = peelTranslate(node, env);
+      if (inner !== node) {
+        const innerMesh = this.evaluateMesh(inner, env, meshOpts);
+        if (!innerMesh.ok) return innerMesh;
+        // Order matters under a bounded cache (face hashes are instance-specific):
+        // capture the inner hashes FIRST, from the just-meshed instance (a cache
+        // hit), so they match innerMesh's faceGroups even if evaluating the placed
+        // shape next evicts the inner. Capture each shape's hashes inline (plain
+        // numbers) so no shape handle is held across the next evaluate.
+        const innerShape = this.evaluate(inner, env);
+        if (!innerShape.ok) return innerShape;
+        const innerHashes = getFaces(innerShape.value).map(getHashCode);
+        const placedShape = this.evaluate(node, env);
+        if (!placedShape.ok) return placedShape;
+        const placedHashes = getFaces(placedShape.value).map(getHashCode);
+        const moved = translateMesh(innerMesh.value, offset);
+        const faceGroups = relocateFaceGroups(moved.faceGroups, innerHashes, placedHashes);
+        // Trust the reuse only if every group mapped onto a placed face. If the
+        // inner mesh was cached from an earlier, now-evicted inner instance, its
+        // faceIds won't match the fresh innerHashes and won't remap — fall
+        // through to meshing the placed shape so the IDs stay correct.
+        const placedSet = new Set(placedHashes);
+        if (faceGroups.every((g) => placedSet.has(g.faceId))) {
+          const placed: ShapeMesh = { ...moved, faceGroups };
+          this.meshCache.set(meshKey, placed);
+          if (this.maxMeshCacheEntries !== undefined) this.trimMeshCache(this.maxMeshCacheEntries);
+          return ok(placed);
+        }
       }
     }
 
