@@ -9,7 +9,7 @@
 import { getKernel } from '@/kernel/index.js';
 import type { Edge, Face, Shape3D } from '@/core/shapeTypes.js';
 import type { ValidSolid } from '@/core/validityTypes.js';
-import { castShape, isShape3D } from '@/core/shapeTypes.js';
+import { castShape, castResultShape, disposeDowncastSource, isShape3D } from '@/core/shapeTypes.js';
 import { HASH_CODE_MAX } from '@/core/constants.js';
 import { type Result, ok, err, isErr } from '@/core/result.js';
 import { validationError, typeCastError, kernelError, BrepErrorCode } from '@/core/errors.js';
@@ -80,6 +80,7 @@ function castToShape3D(
       )
     );
   }
+  disposeDowncastSource(shape, wrapped);
   return ok(wrapped);
 }
 
@@ -355,7 +356,7 @@ export function filletWithEvolution(
       inputFaceHashes,
       HASH_CODE_MAX
     );
-    const cast = castShape(resultShape);
+    const cast = castResultShape(resultShape);
     if (!isShape3D(cast)) {
       return err(kernelError(BrepErrorCode.FILLET_NOT_3D, 'Fillet result is not a 3D shape'));
     }
@@ -446,7 +447,7 @@ export function chamferWithEvolution(
       inputFaceHashes,
       HASH_CODE_MAX
     );
-    const cast = castShape(resultShape);
+    const cast = castResultShape(resultShape);
     if (!isShape3D(cast)) {
       return err(kernelError(BrepErrorCode.CHAMFER_NOT_3D, 'Chamfer result is not a 3D shape'));
     }
@@ -498,7 +499,7 @@ export function shellWithEvolution(
       HASH_CODE_MAX,
       tolerance
     );
-    const cast = castShape(resultShape);
+    const cast = castResultShape(resultShape);
     if (!isShape3D(cast)) {
       return err(kernelError('SHELL_RESULT_NOT_3D', 'Shell result is not a 3D shape'));
     }

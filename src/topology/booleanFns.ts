@@ -15,7 +15,7 @@ import type {
   Vertex,
   Wire,
 } from '@/core/shapeTypes.js';
-import { castShape, isShape3D } from '@/core/shapeTypes.js';
+import { castShape, disposeDowncastSource, isShape3D } from '@/core/shapeTypes.js';
 import { type Result, ok, err, isErr, unwrap } from '@/core/result.js';
 import { validationError, typeCastError, kernelError, BrepErrorCode } from '@/core/errors.js';
 import type { Plane } from '@/core/planeTypes.js';
@@ -89,6 +89,7 @@ function castToShape3D(
       )
     );
   }
+  disposeDowncastSource(shape, wrapped);
   return ok(wrapped);
 }
 
