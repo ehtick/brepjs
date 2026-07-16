@@ -50,6 +50,7 @@ export function makeWireFromMixed(
   // throws. Explode each item to its edges first (an edge yields itself),
   // which lets a mix of edges and wires assemble into one wire.
   const edgeIds: number[] = [];
+  const inputIds = new Set(items.map((it) => unwrap(it)));
   for (const item of items) {
     const sub = k.getSubShapes(unwrap(item), 'edge');
     try {
@@ -64,6 +65,10 @@ export function makeWireFromMixed(
     return handle('wire', k.makeWire(vec));
   } finally {
     vec.delete();
+    // getSubShapes copies each edge into its own arena slot; makeWire shares
+    // their refcounted TShape, so release the copies once it has consumed them.
+    // Skip any id that is an input itself (getSubShapes yields an edge as-is).
+    for (const id of edgeIds) if (!inputIds.has(id)) k.release(id);
   }
 }
 
@@ -260,11 +265,16 @@ export function buildSolidFromFaces(
   }
   const vec = makeVecU32(Module, faceIds);
   try {
-    let sewn = k.sewAndSolidify(vec, tolerance);
-    sewn = k.fixFaceOrientations(sewn);
+    const sewn0 = k.sewAndSolidify(vec, tolerance);
+    const sewn = k.fixFaceOrientations(sewn0);
+    // fixFaceOrientations returns a fresh slot; release the pre-fix intermediate.
+    if (sewn !== sewn0) k.release(sewn0);
     return wrapResult(k, sewn);
   } finally {
     vec.delete();
+    // Each buildTriFace is a fresh arena slot consumed into the sewn solid
+    // (shared refcounted TShape); release the triangles once sewing is done.
+    for (const id of faceIds) k.release(id);
   }
 }
 
@@ -375,6 +385,9 @@ export function triangulatedSurface(
     return wrapResult(k, k.sewAndSolidify(vec, 1e-3));
   } finally {
     vec.delete();
+    // Each buildTriFace is a fresh arena slot consumed into the sewn surface
+    // (shared refcounted TShape); release the triangles once sewing is done.
+    for (const id of faceIds) k.release(id);
   }
 }
 
@@ -397,8 +410,11 @@ export function sewAndSolidify(
 ): KernelShape {
   const vec = makeVecU32(Module, faces.map(unwrap));
   try {
-    let sewn = k.sewAndSolidify(vec, tolerance);
-    sewn = k.fixFaceOrientations(sewn);
+    const sewn0 = k.sewAndSolidify(vec, tolerance);
+    const sewn = k.fixFaceOrientations(sewn0);
+    // fixFaceOrientations returns a fresh slot; release the pre-fix intermediate.
+    // (The input `faces` are caller-owned and intentionally left untouched.)
+    if (sewn !== sewn0) k.release(sewn0);
     return handle('solid', sewn);
   } finally {
     vec.delete();

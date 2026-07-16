@@ -34,6 +34,29 @@ import {
   scale,
   applyMatrix,
   locate,
+  polygon,
+  line,
+  wire,
+  closedWire,
+  extrude,
+  revolve,
+  loft,
+  sweep,
+  thread,
+  convexHull,
+  hull,
+  linearPattern,
+  circularPattern,
+  sketchCircle,
+  sketchEllipse,
+  cone,
+  torus,
+  ellipsoid,
+  drill,
+  section,
+  roof,
+  surfaceFromGrid,
+  getWires,
   getFaces,
   getEdges,
   getVertices,
@@ -52,6 +75,8 @@ import {
 } from '@/index.js';
 import type { AnyShape, Dimension } from '@/core/shapeTypes.js';
 import { getKernel } from '@/kernel/index.js';
+import { DisposalScope } from '@/core/disposal.js';
+import { makeExternalGear } from '@/gear/index.js';
 
 const isOcctWasm = (process.env['TEST_KERNEL'] ?? 'occt') === 'occt-wasm';
 
@@ -421,7 +446,363 @@ describe.skipIf(!isOcctWasm)('occt-wasm arena disposal', () => {
     });
   });
 
+  describe('profile builders leak nothing when disposed', () => {
+    // Regression: makePolygon built its edges + wire and disposed neither, and
+    // makeWireFromMixed (kernel) exploded each input into edge sub-shape slots it
+    // never released — 1 leaked slot per edge in *every* wire built from edges.
+    it('polygon leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using f = unwrap(
+            polygon([
+              [0, 0, 0],
+              [10, 0, 0],
+              [10, 10, 0],
+              [0, 10, 0],
+            ])
+          );
+          void f;
+        })
+      ).toBe(0);
+    });
+
+    it('wire (assembleWire) leaks nothing per edge', () => {
+      expect(
+        perIterationLeak(() => {
+          using e1 = line([0, 0, 0], [10, 0, 0]);
+          using e2 = line([10, 0, 0], [10, 10, 0]);
+          using e3 = line([10, 10, 0], [0, 0, 0]);
+          const r = wire([e1, e2, e3]);
+          if (isOk(r)) unwrap(r)[Symbol.dispose]();
+        })
+      ).toBe(0);
+    });
+  });
+
+  describe('construction ops leak nothing when inputs and result are disposed', () => {
+    // extrude/revolve/loft/sweep were already clean (castResultShape); these lock
+    // that together with the profile-builder fixes above. thread leaked 183/call
+    // pre-fix (its ~60 tooth sections × 3 edges each, via makeWireFromMixed +
+    // DisposalScope.register calling the no-op .delete() instead of Symbol.dispose).
+    it('extrude leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using f = unwrap(
+            polygon([
+              [0, 0, 0],
+              [10, 0, 0],
+              [10, 10, 0],
+              [0, 10, 0],
+            ])
+          );
+          const r = extrude(f, [0, 0, 10]);
+          if (isOk(r)) unwrap(r)[Symbol.dispose]();
+        })
+      ).toBe(0);
+    });
+
+    it('revolve leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using f = unwrap(
+            polygon([
+              [5, 0, 0],
+              [10, 0, 0],
+              [10, 0, 10],
+              [5, 0, 10],
+            ])
+          );
+          const r = revolve(f, { axis: [0, 0, 1], at: [0, 0, 0] });
+          if (isOk(r)) unwrap(r)[Symbol.dispose]();
+        })
+      ).toBe(0);
+    });
+
+    it('loft leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using f1 = unwrap(
+            polygon([
+              [0, 0, 0],
+              [10, 0, 0],
+              [10, 10, 0],
+              [0, 10, 0],
+            ])
+          );
+          using f2 = unwrap(
+            polygon([
+              [0, 0, 20],
+              [10, 0, 20],
+              [10, 10, 20],
+              [0, 10, 20],
+            ])
+          );
+          const w1 = getWires(f1)[0];
+          const w2 = getWires(f2)[0];
+          if (!w1 || !w2) throw new Error('polygon faces must have wires');
+          const r = loft([w1, w2]);
+          if (isOk(r)) unwrap(r)[Symbol.dispose]();
+        })
+      ).toBe(0);
+    });
+
+    it('sweep leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using pf = unwrap(
+            polygon([
+              [-1, -1, 0],
+              [1, -1, 0],
+              [1, 1, 0],
+              [-1, 1, 0],
+            ])
+          );
+          const pw = getWires(pf)[0];
+          if (!pw) throw new Error('polygon face must have a wire');
+          const profile = unwrap(closedWire(pw));
+          using e = line([0, 0, 0], [0, 0, 20]);
+          using spine = unwrap(wire([e]));
+          const r = sweep(profile, spine);
+          if (isOk(r)) {
+            const v = unwrap(r);
+            if (Array.isArray(v)) {
+              v.forEach((s) => {
+                s[Symbol.dispose]();
+              });
+            } else {
+              v[Symbol.dispose]();
+            }
+          }
+        })
+      ).toBe(0);
+    });
+
+    it('thread leaks nothing (was 183 slots/call)', () => {
+      expect(
+        perIterationLeak(() => {
+          const r = thread({ radius: 6, pitch: 2.5, height: 7.5 });
+          if (isOk(r)) unwrap(r)[Symbol.dispose]();
+        })
+      ).toBe(0);
+    });
+  });
+
+  describe('hull / pattern / gear / canned-sketch ops leak nothing', () => {
+    // buildSolidFromFaces (hull/convexHull) leaked each triangle face slot + the
+    // pre-orientation intermediate; the pattern fns never disposed their fused
+    // copies and the kernel leaked the pattern compound; gear + circle/ellipse
+    // sketches leaked their profile wire/edge. All fixed.
+    it('convexHull leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          const r = convexHull([
+            [0, 0, 0],
+            [10, 0, 0],
+            [0, 10, 0],
+            [0, 0, 10],
+            [10, 10, 10],
+          ]);
+          if (isOk(r)) unwrap(r)[Symbol.dispose]();
+        })
+      ).toBe(0);
+    });
+
+    it('hull leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using a = box(5, 5, 5);
+          using b = box(5, 5, 5);
+          const r = hull([a, b]);
+          if (isOk(r)) unwrap(r)[Symbol.dispose]();
+        })
+      ).toBe(0);
+    });
+
+    it('linearPattern leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using b = box(2, 2, 2);
+          const r = linearPattern(b, [1, 0, 0], 3, 5);
+          if (isOk(r)) unwrap(r)[Symbol.dispose]();
+        })
+      ).toBe(0);
+    });
+
+    it('circularPattern leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using b = box(2, 2, 2);
+          const r = circularPattern(b, [0, 0, 1], 4, 360, [10, 0, 0]);
+          if (isOk(r)) unwrap(r)[Symbol.dispose]();
+        })
+      ).toBe(0);
+    });
+
+    it('makeExternalGear leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          const r = makeExternalGear({ teeth: 12, moduleSize: 2, thickness: 5 });
+          if (isOk(r)) r.value.solid[Symbol.dispose]();
+        })
+      ).toBe(0);
+    });
+
+    it('sketchCircle / sketchEllipse leak nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          const s = sketchCircle(5);
+          s.wire[Symbol.dispose]();
+        })
+      ).toBe(0);
+      expect(
+        perIterationLeak(() => {
+          const s = sketchEllipse(5, 3);
+          s.wire[Symbol.dispose]();
+        })
+      ).toBe(0);
+    });
+  });
+
+  describe('positioned primitives + drill leak nothing', () => {
+    // A positioned primitive rotates/translates the base solid; occt-wasm returns
+    // a fresh slot per move and orphaned the pre-move id (a leak in every non-origin
+    // cylinder/sphere/cone/torus). drill never disposed its tool cylinder.
+    it('cylinder with at/axis leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using c = cylinder(1, 10, { at: [5, 5, 0], axis: [0, 1, 0] });
+          void c;
+        })
+      ).toBe(0);
+    });
+
+    it('centered cylinder leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using c = cylinder(1, 10, { centered: true });
+          void c;
+        })
+      ).toBe(0);
+    });
+
+    it('sphere / cone / ellipsoid with position leak nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using s = sphere(5, { at: [3, 0, 0] });
+          void s;
+        })
+      ).toBe(0);
+      expect(
+        perIterationLeak(() => {
+          using c = cone(5, 2, 10, { at: [1, 1, 0], axis: [0, 1, 0] });
+          void c;
+        })
+      ).toBe(0);
+      expect(
+        perIterationLeak(() => {
+          using e = ellipsoid(5, 3, 2, { at: [1, 0, 0] });
+          void e;
+        })
+      ).toBe(0);
+    });
+
+    it('box with at / centered leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using b = box(10, 10, 10, { centered: true });
+          void b;
+        })
+      ).toBe(0);
+      expect(
+        perIterationLeak(() => {
+          using b = box(10, 10, 10, { at: [5, 5, 5] });
+          void b;
+        })
+      ).toBe(0);
+    });
+
+    it('torus with position leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using t = torus(10, 2, { at: [1, 0, 0], axis: [0, 1, 0] });
+          void t;
+        })
+      ).toBe(0);
+    });
+
+    it('drill leaks nothing', () => {
+      expect(
+        perIterationLeak(() => {
+          using b = box(10, 10, 10);
+          const r = drill(b, { at: [5, 5, 0], radius: 1, axis: [0, 0, 1] });
+          if (isOk(r)) unwrap(r)[Symbol.dispose]();
+        })
+      ).toBe(0);
+    });
+  });
+
+  describe('section / roof shed their JS-side intermediates', () => {
+    // section's cutting-plane face (4 edges + wire + face) and roof's tooth
+    // triangles are now disposed. A single kernel-internal slot remains per call
+    // (BRepAlgoAPI_Section / sewAndSolidify refcount artifact) — a bounded, known
+    // residual, not the pre-fix per-edge/per-triangle growth (section 7, roof 12).
+    it('section leaks at most its kernel residual', () => {
+      expect(
+        perIterationLeak(() => {
+          using b = box(10, 10, 10, { centered: true });
+          const r = section(b, 'XY');
+          if (isOk(r)) unwrap(r)[Symbol.dispose]();
+        })
+      ).toBeLessThanOrEqual(1);
+    });
+
+    it('surfaceFromGrid leaks nothing (triangulatedSurface tri-faces)', () => {
+      const heights = [
+        [0, 1, 0],
+        [1, 2, 1],
+        [0, 1, 0],
+      ];
+      expect(
+        perIterationLeak(() => {
+          const r = surfaceFromGrid(heights, { width: 10, depth: 10 });
+          if (isOk(r)) unwrap(r)[Symbol.dispose]();
+        })
+      ).toBe(0);
+    });
+
+    it('roof leaks at most its kernel residual', () => {
+      expect(
+        perIterationLeak(() => {
+          using f = unwrap(
+            polygon([
+              [0, 0, 0],
+              [10, 0, 0],
+              [10, 10, 0],
+              [0, 10, 0],
+            ])
+          );
+          const w = getWires(f)[0];
+          if (!w) throw new Error('polygon face must have a wire');
+          const r = roof(unwrap(closedWire(w)));
+          if (isOk(r)) unwrap(r)[Symbol.dispose]();
+        })
+      ).toBeLessThanOrEqual(1);
+    });
+  });
+
   describe('disposal is real, not a no-op', () => {
+    it('DisposalScope.register frees a registered shape via kernel.dispose', () => {
+      // register() historically called the no-op .delete(); a shape registered
+      // for scope cleanup leaked on occt-wasm. It now routes through Symbol.dispose.
+      const before = arenaCount();
+      {
+        using scope = new DisposalScope();
+        scope.register(box(10, 10, 10));
+        expect(arenaCount()).toBeGreaterThan(before);
+      }
+      expect(arenaCount()).toBe(before);
+    });
+
     it('creating then disposing a box returns the arena to baseline', () => {
       const before = arenaCount();
       const b = box(10, 10, 10);
