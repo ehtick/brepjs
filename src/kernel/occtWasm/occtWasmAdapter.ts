@@ -43,6 +43,7 @@
 import type { KernelCapabilities } from '@/kernel/capabilities.js';
 import { EXACT_BREP_CAPABILITIES } from '@/kernel/capabilities.js';
 import { UnsupportedKernelOperationError } from '@/kernel/unsupported.js';
+import { BrepBugError } from '@/utils/bug.js';
 import type {
   BooleanOpType,
   BooleanOptions,
@@ -192,21 +193,47 @@ export class OcctWasmAdapter implements KernelAdapter {
     notImplemented('executeBatch');
   }
 
+  // occt-wasm >= 3.7.0 exposes stateless arena marks (checkpoint/releaseSince);
+  // brepjs's interface also reports checkpointCount, so track open marks JS-side.
+  // Bulk-free contract: every handle allocated after a checkpoint is invalidated
+  // by restoreCheckpoint — copy out (as mesh/data) or allocate before the mark
+  // anything that must survive; a live handle used afterward is a use-after-free.
+  private readonly openCheckpoints: number[] = [];
+
   checkpoint(): number {
-    // occt-wasm doesn't have checkpoint support yet
-    notImplemented('checkpoint');
+    const mark = this.k.checkpoint();
+    this.openCheckpoints.push(mark);
+    return mark;
   }
 
   checkpointCount(): number {
-    notImplemented('checkpointCount');
+    return this.openCheckpoints.length;
   }
 
-  restoreCheckpoint(_cp: number): void {
-    notImplemented('restoreCheckpoint');
+  restoreCheckpoint(cp: number): void {
+    // Validate BEFORE releaseSince: a stale/bogus mark would otherwise erase
+    // every live handle above that arena position, not just this scope's.
+    const idx = this.openCheckpoints.lastIndexOf(cp);
+    if (idx === -1) {
+      throw new BrepBugError(
+        'occtWasmAdapter.restoreCheckpoint',
+        `checkpoint ${cp} is not open — releaseSince would erase unrelated live handles`
+      );
+    }
+    this.k.releaseSince(cp);
+    this.openCheckpoints.length = idx;
   }
 
-  discardCheckpoint(_cp: number): void {
-    notImplemented('discardCheckpoint');
+  discardCheckpoint(cp: number): void {
+    // Keep every handle; just forget the mark (occt-wasm marks hold no state).
+    // Tolerant of an unknown cp — discarding frees nothing, so there's no risk.
+    this.closeCheckpoint(cp);
+  }
+
+  /** Drop `cp` and any marks nested inside it (LIFO), so the depth stays honest. */
+  private closeCheckpoint(cp: number): void {
+    const idx = this.openCheckpoints.lastIndexOf(cp);
+    if (idx !== -1) this.openCheckpoints.length = idx;
   }
 
   // =========================================================================
