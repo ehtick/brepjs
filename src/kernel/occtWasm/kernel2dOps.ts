@@ -14,6 +14,8 @@ import * as ow2d from '@/kernel/geometry2d.js';
 import type { Curve2dObj } from '@/kernel/geometry2d.js';
 import type { OcctKernelWasm, OcctWasmModule } from './occtWasmTypes.js';
 import { handle, unwrap } from './helpers.js';
+import { curveParameters, curvePointAtParam } from './curveOps.js';
+import { uvFromPoint } from './surfaceOps.js';
 
 // ─── Curve handle wrappers — identity casts at the kernel boundary ──────────
 
@@ -927,9 +929,35 @@ export function extractSurfaceFromFace(face: KernelShape): KernelType {
   return face;
 }
 
-export function extractCurve2dFromEdge(): Curve2dHandle {
-  // PCurve extraction not yet supported — return a dummy line.
-  return c2dWrap(ow2d.makeLine2d(0, 0, 1, 0));
+export function extractCurve2dFromEdge(
+  k: OcctKernelWasm,
+  edge: KernelShape,
+  face: KernelShape
+): Curve2dHandle {
+  // occt-wasm exposes no native pcurve adaptor (BRepAdaptor_Curve2d), so
+  // reconstruct the edge's 2D curve on the face: sample the 3D edge, project each
+  // point onto the face surface via uvFromPoint (GeomAPI_ProjectPointOnSurf), and
+  // fit a 2D B-spline through the samples — the same projection approach brepkit
+  // uses. Accuracy: makeBSpline2d has no fitting solver and treats the samples as
+  // control poles, so a straight (LINE) edge is exact, while a curved pcurve (an
+  // arc/circle on a planar face, or any curved edge) is a smooth approximation
+  // that bows slightly inside the samples — the deviation shrinks as N rises.
+  // Point projection also snaps to the nearest UV branch, so a seam-crossing edge
+  // on a periodic surface (cylinder/cone) can jump branches.
+  const [first, last] = curveParameters(k, edge);
+  const N = 60;
+  const points: [number, number][] = [];
+  for (let i = 0; i <= N; i++) {
+    const t = first + ((last - first) * i) / N;
+    const uv = uvFromPoint(k, face, curvePointAtParam(k, edge, t));
+    if (uv) points.push(uv);
+  }
+  if (points.length < 2) {
+    throw new Error(
+      'occt-wasm: extractCurve2dFromEdge could not project the edge onto the face surface'
+    );
+  }
+  return makeBSpline2d(points);
 }
 
 export function buildCurves3d(k: OcctKernelWasm, wire: KernelShape): void {
