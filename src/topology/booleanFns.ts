@@ -28,7 +28,8 @@ import { validationError, typeCastError, kernelError, BrepErrorCode } from '@/co
 import type { Plane } from '@/core/planeTypes.js';
 import type { PlaneInput } from '@/core/planeTypes.js';
 import { resolvePlane } from '@/core/planeOps.js';
-import { vecAdd, vecScale } from '@/core/vecOps.js';
+import { vecAdd, vecScale, vecSub, vecDot } from '@/core/vecOps.js';
+import type { Vec3 } from '@/core/types.js';
 import { HASH_CODE_MAX } from '@/core/constants.js';
 import { getWires, getEdges, getVertices } from './shapeFns.js';
 import { getAtOrThrow, firstOrThrow } from '@/utils/arrayAccess.js';
@@ -596,10 +597,41 @@ export function cutAll(
 // ---------------------------------------------------------------------------
 
 /**
- * Build a large bounded planar face from a Plane definition.
- * The face extends +/-size along xDir and yDir from the origin.
+ * Choose the section face's in-plane half-extent and centre so it covers the
+ * whole shape. The rectangle is centred on the shape's bounding-box centre
+ * projected onto the cutting plane (dropping the normal component keeps the cut
+ * at the plane's position while covering an off-origin shape). The half-extent is
+ * the bbox diagonal — large enough for any plane orientation — so a big or
+ * off-origin shape is not silently clipped.
+ *
+ * When the caller passes an explicit `planeSize` they've taken manual control, so
+ * the historical plane-origin centring is preserved (only the auto path re-centres
+ * on the shape) to avoid silently changing behaviour for existing callers.
  */
-function makeSectionFace(plane: Plane, size: number): KernelType {
+function resolveSectionPlacement(
+  shape: AnyShape<Dimension>,
+  plane: Plane,
+  planeSize: number | undefined
+): { size: number; center: Vec3 } {
+  if (planeSize !== undefined) {
+    return { size: planeSize, center: plane.origin };
+  }
+  const { min, max } = getKernel().boundingBox(shape.wrapped);
+  const bboxCenter: Vec3 = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+  // Project the bbox centre onto the plane: c - ((c - origin)·n) n.
+  const normalOffset = vecDot(vecSub(bboxCenter, plane.origin), plane.zDir);
+  const center = vecSub(bboxCenter, vecScale(plane.zDir, normalOffset));
+  const diagonal = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
+  // Floor guards a degenerate (point/empty) bbox.
+  const size = Math.max(diagonal, 1);
+  return { size, center };
+}
+
+/**
+ * Build a large bounded planar face from a Plane definition.
+ * The face extends +/-size along xDir and yDir from `center` (a point on the plane).
+ */
+function makeSectionFace(plane: Plane, size: number, center: Vec3): KernelType {
   const kernel = getKernel();
 
   // Compute 4 corners of a large rectangle on the plane
@@ -607,7 +639,7 @@ function makeSectionFace(plane: Plane, size: number): KernelType {
   const hy = vecScale(plane.yDir, size);
   const nhx = vecScale(plane.xDir, -size);
   const nhy = vecScale(plane.yDir, -size);
-  const o = plane.origin;
+  const o = center;
   const c0: [number, number, number] = [...vecAdd(vecAdd(o, nhx), nhy)];
   const c1: [number, number, number] = [...vecAdd(vecAdd(o, hx), nhy)];
   const c2: [number, number, number] = [...vecAdd(vecAdd(o, hx), hy)];
@@ -641,20 +673,22 @@ function makeSectionFace(plane: Plane, size: number): KernelType {
  * @param shape The shape to section (typically a solid or shell)
  * @param plane Plane definition — a named plane ("XY", "XZ", etc.) or a Plane object
  * @param options.approximation Whether to approximate the section curves (default true)
- * @param options.planeSize Half-size of the cutting plane (default 1e4)
+ * @param options.planeSize Half-size of the cutting plane. Defaults to the shape's
+ *   bounding-box diagonal so large or off-origin shapes aren't clipped.
  * @returns The section result as a shape (typically containing wires/edges)
  */
 export function section(
   shape: AnyShape<Dimension>,
   plane: PlaneInput,
-  { approximation = true, planeSize = 1e4 }: { approximation?: boolean; planeSize?: number } = {}
+  { approximation = true, planeSize }: { approximation?: boolean; planeSize?: number } = {}
 ): Result<AnyShape<Dimension>> {
   if (getKernel().isNull(shape.wrapped)) {
     return err(validationError(BrepErrorCode.NULL_SHAPE_INPUT, 'section: shape is a null shape'));
   }
 
   const resolvedPlane: Plane = typeof plane === 'string' ? unwrap(resolvePlane(plane)) : plane;
-  const sectionFace = makeSectionFace(resolvedPlane, planeSize);
+  const { size, center } = resolveSectionPlacement(shape, resolvedPlane, planeSize);
+  const sectionFace = makeSectionFace(resolvedPlane, size, center);
 
   try {
     const kernel = getKernel();
